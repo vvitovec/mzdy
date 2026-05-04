@@ -160,7 +160,6 @@ export function PayrollCalculator() {
           </div>
           <div>
             <div className="brand">Mzdová kalkulačka</div>
-            <div className="brand-subtitle">HPP · DPP · DPČ</div>
           </div>
         </div>
         <div className="nav-links">
