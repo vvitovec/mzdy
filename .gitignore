@@ -4,6 +4,8 @@ out
 .vercel
 dist
 coverage
+playwright-report
+test-results
 .DS_Store
 *.log
 .env*

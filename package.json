@@ -7,15 +7,17 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "vitest run"
+    "test": "vitest run src",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "lucide-react": "^0.563.0",
     "next": "^16.2.4",
-    "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5"
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
     "@tailwindcss/postcss": "^4.1.18",
     "@types/node": "^20",
     "@types/react": "^19",
@@ -25,5 +27,8 @@
     "tailwindcss": "^4.1.18",
     "typescript": "^5",
     "vitest": "^4.0.16"
+  },
+  "overrides": {
+    "postcss": "8.5.10"
   }
 }

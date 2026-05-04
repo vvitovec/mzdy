@@ -1,22 +1,31 @@
 "use client";
 
 import {
+  AlertTriangle,
   Baby,
   Calculator,
   ChevronDown,
   CircleHelp,
   Gift,
+  Info,
   Plus,
   ReceiptText,
   RotateCcw,
+  ShieldCheck,
   Utensils,
   WalletCards,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import {
   calculatePayroll,
+  createDefaultPayrollInput,
   type CalculationMode,
+  type DisabilityDiscount,
+  type DpcRegime,
+  type EmployerSocialProfile,
   type EmploymentType,
+  type HealthMinimumMode,
+  type PayrollInput,
   PAYROLL_2026,
 } from "@/lib/payroll";
 
@@ -46,29 +55,19 @@ const employmentLabels: Record<EmploymentType, string> = {
   dpc: "DPČ",
 };
 
-const defaultInput = {
-  mode: "netToGross" as CalculationMode,
-  amount: 30_000,
-  employmentType: "hpp" as EmploymentType,
-  signedDeclaration: true,
-  childrenCount: 0,
-  useMealAllowance: false,
-  workedDays: 21,
-  mealAllowancePerDay: PAYROLL_2026.mealAllowanceExemptLimit,
-  includeMealAllowanceInNet: false,
-  applyHealthMinimum: true,
-  useAdvancedPay: false,
-  rewardAmount: 0,
-  personalBonusAmount: 0,
-  otherTaxableIncomeAmount: 0,
-  averageHourlyWage: PAYROLL_2026.minimumWage / 168,
-  overtimeHours: 0,
-  nightHours: 0,
-  weekendHours: 0,
-  holidayHours: 0,
-  hardshipHours: 0,
-  hardshipRate: 10,
+const employerProfileLabels: Record<EmployerSocialProfile, string> = {
+  standard: "Běžná sazba",
+  risky: "Rizikové zaměstnání",
+  rescue: "ZZS / hasiči podniku",
 };
+
+const healthMinimumLabels: Record<HealthMinimumMode, string> = {
+  full: "Plné minimum",
+  prorated: "Poměrná část",
+  exempt: "Bez minima",
+};
+
+const defaultInput = createDefaultPayrollInput();
 
 function formatAmount(value: number) {
   return currency.format(Math.round(value));
@@ -86,105 +85,59 @@ function Field({ label, suffix, compact, children }: FieldProps) {
   );
 }
 
+function clampInputNumber(value: number, min = 0) {
+  return Number.isFinite(value) ? Math.max(min, value) : min;
+}
+
 export function PayrollCalculator() {
-  const [mode, setMode] = useState<CalculationMode>(defaultInput.mode);
-  const [amount, setAmount] = useState(defaultInput.amount);
-  const [employmentType, setEmploymentType] = useState<EmploymentType>(defaultInput.employmentType);
-  const [signedDeclaration, setSignedDeclaration] = useState(defaultInput.signedDeclaration);
-  const [childrenCount, setChildrenCount] = useState(defaultInput.childrenCount);
-  const [useMealAllowance, setUseMealAllowance] = useState(defaultInput.useMealAllowance);
-  const [workedDays, setWorkedDays] = useState(defaultInput.workedDays);
-  const [mealAllowancePerDay, setMealAllowancePerDay] = useState(defaultInput.mealAllowancePerDay);
-  const [includeMealAllowanceInNet, setIncludeMealAllowanceInNet] = useState(defaultInput.includeMealAllowanceInNet);
-  const [applyHealthMinimum, setApplyHealthMinimum] = useState(defaultInput.applyHealthMinimum);
-  const [useAdvancedPay, setUseAdvancedPay] = useState(defaultInput.useAdvancedPay);
-  const [rewardAmount, setRewardAmount] = useState(defaultInput.rewardAmount);
-  const [personalBonusAmount, setPersonalBonusAmount] = useState(defaultInput.personalBonusAmount);
-  const [otherTaxableIncomeAmount, setOtherTaxableIncomeAmount] = useState(defaultInput.otherTaxableIncomeAmount);
-  const [averageHourlyWage, setAverageHourlyWage] = useState(defaultInput.averageHourlyWage);
-  const [overtimeHours, setOvertimeHours] = useState(defaultInput.overtimeHours);
-  const [nightHours, setNightHours] = useState(defaultInput.nightHours);
-  const [weekendHours, setWeekendHours] = useState(defaultInput.weekendHours);
-  const [holidayHours, setHolidayHours] = useState(defaultInput.holidayHours);
-  const [hardshipHours, setHardshipHours] = useState(defaultInput.hardshipHours);
-  const [hardshipRate, setHardshipRate] = useState(defaultInput.hardshipRate);
-
-  const result = useMemo(
-    () =>
-      calculatePayroll({
-        mode,
-        amount,
-        employmentType,
-        signedDeclaration,
-        childrenCount,
-        useMealAllowance,
-        workedDays,
-        mealAllowancePerDay,
-        includeMealAllowanceInNet,
-        applyHealthMinimum,
-        rewardAmount: useAdvancedPay ? rewardAmount : 0,
-        personalBonusAmount: useAdvancedPay ? personalBonusAmount : 0,
-        otherTaxableIncomeAmount: useAdvancedPay ? otherTaxableIncomeAmount : 0,
-        averageHourlyWage: useAdvancedPay ? averageHourlyWage : 0,
-        overtimeHours: useAdvancedPay ? overtimeHours : 0,
-        nightHours: useAdvancedPay ? nightHours : 0,
-        weekendHours: useAdvancedPay ? weekendHours : 0,
-        holidayHours: useAdvancedPay ? holidayHours : 0,
-        hardshipHours: useAdvancedPay ? hardshipHours : 0,
-        hardshipRate: useAdvancedPay ? hardshipRate : 0,
-      }),
-    [
-      mode,
-      amount,
-      employmentType,
-      signedDeclaration,
-      childrenCount,
-      useMealAllowance,
-      workedDays,
-      mealAllowancePerDay,
-      includeMealAllowanceInNet,
-      applyHealthMinimum,
-      useAdvancedPay,
-      rewardAmount,
-      personalBonusAmount,
-      otherTaxableIncomeAmount,
-      averageHourlyWage,
-      overtimeHours,
-      nightHours,
-      weekendHours,
-      holidayHours,
-      hardshipHours,
-      hardshipRate,
-    ],
-  );
-
+  const [input, setInput] = useState<PayrollInput>(defaultInput);
+  const [expertMode, setExpertMode] = useState(false);
+  const result = useMemo(() => calculatePayroll(input), [input]);
   const employeeDeductions = result.employeeSocial + result.employeeHealth + result.taxAfterDiscounts - result.taxBonus;
   const employerInsurance = result.employerSocial + result.employerHealth;
-  const primaryResult = mode === "netToGross" ? result.grossWage : result.netCash;
-  const primaryLabel = mode === "netToGross" ? "Hrubá mzda celkem" : "Čistý příjem";
+  const primaryResult = input.calculation.mode === "netToGross" ? result.grossWage : result.netCash;
+  const primaryLabel = input.calculation.mode === "netToGross" ? "Hrubá mzda celkem" : "Čistý příjem";
+  const hasUnsupportedWarnings = result.warnings.some((warning) => warning.severity === "unsupported");
+
+  const updateCalculation = (patch: Partial<PayrollInput["calculation"]>) => {
+    setInput((current) => ({ ...current, calculation: { ...current.calculation, ...patch } }));
+  };
+
+  const updateEmployment = (patch: Partial<PayrollInput["employment"]>) => {
+    setInput((current) => ({ ...current, employment: { ...current.employment, ...patch } }));
+  };
+
+  const updateTaxpayer = (patch: Partial<PayrollInput["taxpayer"]>) => {
+    setInput((current) => ({ ...current, taxpayer: { ...current.taxpayer, ...patch } }));
+  };
+
+  const updateIncome = (patch: Partial<PayrollInput["income"]>) => {
+    setInput((current) => ({ ...current, income: { ...current.income, ...patch } }));
+  };
+
+  const updateMealAllowance = (patch: Partial<PayrollInput["benefits"]["mealAllowance"]>) => {
+    setInput((current) => ({
+      ...current,
+      benefits: {
+        mealAllowance: {
+          ...current.benefits.mealAllowance,
+          ...patch,
+        },
+      },
+    }));
+  };
+
+  const updateInsurance = (patch: Partial<PayrollInput["insurance"]>) => {
+    setInput((current) => ({ ...current, insurance: { ...current.insurance, ...patch } }));
+  };
+
+  const updateYearToDate = (patch: Partial<PayrollInput["yearToDate"]>) => {
+    setInput((current) => ({ ...current, yearToDate: { ...current.yearToDate, ...patch } }));
+  };
 
   const reset = () => {
-    setMode(defaultInput.mode);
-    setAmount(defaultInput.amount);
-    setEmploymentType(defaultInput.employmentType);
-    setSignedDeclaration(defaultInput.signedDeclaration);
-    setChildrenCount(defaultInput.childrenCount);
-    setUseMealAllowance(defaultInput.useMealAllowance);
-    setWorkedDays(defaultInput.workedDays);
-    setMealAllowancePerDay(defaultInput.mealAllowancePerDay);
-    setIncludeMealAllowanceInNet(defaultInput.includeMealAllowanceInNet);
-    setApplyHealthMinimum(defaultInput.applyHealthMinimum);
-    setUseAdvancedPay(defaultInput.useAdvancedPay);
-    setRewardAmount(defaultInput.rewardAmount);
-    setPersonalBonusAmount(defaultInput.personalBonusAmount);
-    setOtherTaxableIncomeAmount(defaultInput.otherTaxableIncomeAmount);
-    setAverageHourlyWage(defaultInput.averageHourlyWage);
-    setOvertimeHours(defaultInput.overtimeHours);
-    setNightHours(defaultInput.nightHours);
-    setWeekendHours(defaultInput.weekendHours);
-    setHolidayHours(defaultInput.holidayHours);
-    setHardshipHours(defaultInput.hardshipHours);
-    setHardshipRate(defaultInput.hardshipRate);
+    setInput(createDefaultPayrollInput());
+    setExpertMode(false);
   };
 
   return (
@@ -200,7 +153,7 @@ export function PayrollCalculator() {
           </div>
         </div>
         <div className="nav-links">
-          <span className="credit-chip">orientační výpočet</span>
+          <span className={hasUnsupportedWarnings ? "credit-chip danger" : "credit-chip"}>zdrojovaný výpočet</span>
           <a href="https://vvitovec.com">vvitovec.com</a>
         </div>
       </nav>
@@ -211,7 +164,7 @@ export function PayrollCalculator() {
             <p className="eyebrow">Čistá · hrubá · náklady</p>
             <h1>Mzdová kalkulačka 2026</h1>
           </div>
-          <p>Rychlý přepočet mzdy, odvodů a nákladů zaměstnavatele pro běžné pracovní scénáře.</p>
+          <p>Výpočet mzdy, odvodů a nákladů zaměstnavatele s expertními volbami pro běžné české scénáře.</p>
         </header>
 
         <div className="calculator-shell">
@@ -227,23 +180,39 @@ export function PayrollCalculator() {
             </div>
 
             <div className="segmented" aria-label="Režim výpočtu">
-              <button type="button" className={mode === "netToGross" ? "active" : ""} onClick={() => setMode("netToGross")}>
-                Čistá → hrubá
-              </button>
-              <button type="button" className={mode === "grossToNet" ? "active" : ""} onClick={() => setMode("grossToNet")}>
-                Hrubá → čistá
-              </button>
+              {(["netToGross", "grossToNet"] as CalculationMode[]).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  className={input.calculation.mode === mode ? "active" : ""}
+                  onClick={() => updateCalculation({ mode })}
+                >
+                  {mode === "netToGross" ? "Čistá → hrubá" : "Hrubá → čistá"}
+                </button>
+              ))}
             </div>
 
             <div className="form-stack">
-              <Field label={mode === "netToGross" ? "Požadovaná čistá mzda" : "Základní hrubá mzda"} suffix="Kč">
-                <input value={amount} min={0} type="number" onChange={(event) => setAmount(Number(event.target.value))} />
+              <Field
+                label={input.calculation.mode === "netToGross" ? "Požadovaný čistý příjem" : "Základní hrubá mzda"}
+                suffix="Kč"
+              >
+                <input
+                  value={input.calculation.amount}
+                  min={0}
+                  type="number"
+                  inputMode="numeric"
+                  onChange={(event) => updateCalculation({ amount: clampInputNumber(Number(event.target.value)) })}
+                />
               </Field>
 
               <div className="field-grid">
                 <label className="field">
                   <span className="field-label">Typ vztahu</span>
-                  <select value={employmentType} onChange={(event) => setEmploymentType(event.target.value as EmploymentType)}>
+                  <select
+                    value={input.employment.type}
+                    onChange={(event) => updateEmployment({ type: event.target.value as EmploymentType })}
+                  >
                     <option value="hpp">HPP</option>
                     <option value="dpp">DPP</option>
                     <option value="dpc">DPČ</option>
@@ -251,10 +220,11 @@ export function PayrollCalculator() {
                 </label>
                 <Field label="Počet dětí" suffix="dětí">
                   <input
-                    value={childrenCount}
+                    value={input.taxpayer.childrenCount}
                     min={0}
                     type="number"
-                    onChange={(event) => setChildrenCount(Number(event.target.value))}
+                    inputMode="numeric"
+                    onChange={(event) => updateTaxpayer({ childrenCount: clampInputNumber(Number(event.target.value)) })}
                   />
                 </Field>
               </div>
@@ -263,154 +233,358 @@ export function PayrollCalculator() {
                 <span>Podepsané prohlášení poplatníka</span>
                 <input
                   type="checkbox"
-                  checked={signedDeclaration}
-                  onChange={(event) => setSignedDeclaration(event.target.checked)}
+                  checked={input.taxpayer.signedDeclaration}
+                  onChange={(event) => updateTaxpayer({ signedDeclaration: event.target.checked })}
                 />
               </label>
+
               <label className="switch-row">
-                <span>Hlídat minimum zdravotního pojištění u HPP</span>
-                <input
-                  type="checkbox"
-                  checked={applyHealthMinimum}
-                  onChange={(event) => setApplyHealthMinimum(event.target.checked)}
-                  disabled={employmentType !== "hpp"}
-                />
+                <span>Expertní režim</span>
+                <input type="checkbox" checked={expertMode} onChange={(event) => setExpertMode(event.target.checked)} />
               </label>
 
               <OptionalSection
                 icon={<Utensils size={17} aria-hidden="true" />}
-                title="Přidat stravenky"
-                enabled={useMealAllowance}
-                onChange={setUseMealAllowance}
+                title="Přidat příspěvek na stravování"
+                enabled={input.benefits.mealAllowance.enabled}
+                onChange={(enabled) => updateMealAllowance({ enabled })}
               >
                 <div className="field-grid">
-                  <Field label="Paušál za směnu" suffix="Kč">
+                  <Field label="Příspěvek za směnu" suffix="Kč">
                     <input
-                      value={mealAllowancePerDay}
+                      value={input.benefits.mealAllowance.amountPerShift}
                       min={0}
                       step="0.5"
                       type="number"
-                      onChange={(event) => setMealAllowancePerDay(Number(event.target.value))}
+                      onChange={(event) => updateMealAllowance({ amountPerShift: clampInputNumber(Number(event.target.value)) })}
                     />
                   </Field>
-                  <Field label="Odpracované směny" suffix="dní">
+                  <Field label="Způsobilé směny" suffix="směn">
                     <input
-                      value={workedDays}
+                      value={input.benefits.mealAllowance.eligibleShifts}
                       min={0}
                       type="number"
-                      onChange={(event) => setWorkedDays(Number(event.target.value))}
+                      onChange={(event) => updateMealAllowance({ eligibleShifts: clampInputNumber(Number(event.target.value)) })}
                     />
                   </Field>
                 </div>
                 <label className="switch-row">
-                  <span>Započítat stravenky do čistého příjmu</span>
+                  <span>Započítat příspěvek do čistého příjmu</span>
                   <input
                     type="checkbox"
-                    checked={includeMealAllowanceInNet}
-                    onChange={(event) => setIncludeMealAllowanceInNet(event.target.checked)}
+                    checked={input.benefits.mealAllowance.includeInNet}
+                    onChange={(event) => updateMealAllowance({ includeInNet: event.target.checked })}
                   />
                 </label>
-                <p className="inline-note">Osvobozený limit pro rok 2026: {decimalCurrency.format(PAYROLL_2026.mealAllowanceExemptLimit)} za směnu.</p>
+                {expertMode ? (
+                  <label className="switch-row">
+                    <span>U směn vzniká nárok na cestovní stravné</span>
+                    <input
+                      type="checkbox"
+                      checked={input.benefits.mealAllowance.travelMealEntitlement}
+                      onChange={(event) => updateMealAllowance({ travelMealEntitlement: event.target.checked })}
+                    />
+                  </label>
+                ) : null}
+                <p className="inline-note">
+                  Osvobozený limit pro rok 2026: {decimalCurrency.format(PAYROLL_2026.benefits.mealAllowanceExemptLimit)} za směnu.
+                </p>
               </OptionalSection>
 
               <OptionalSection
                 icon={<Gift size={17} aria-hidden="true" />}
                 title="Přidat odměny a příplatky"
-                enabled={useAdvancedPay}
-                onChange={setUseAdvancedPay}
+                enabled={
+                  input.income.rewardAmount > 0 ||
+                  input.income.personalBonusAmount > 0 ||
+                  input.income.otherTaxableIncomeAmount > 0 ||
+                  input.income.overtimeHours > 0 ||
+                  input.income.nightHours > 0 ||
+                  input.income.weekendHours > 0 ||
+                  input.income.holidayHours > 0 ||
+                  input.income.hardshipHours > 0
+                }
+                onChange={(enabled) => {
+                  if (!enabled) {
+                    updateIncome({
+                      rewardAmount: 0,
+                      personalBonusAmount: 0,
+                      otherTaxableIncomeAmount: 0,
+                      overtimeHours: 0,
+                      nightHours: 0,
+                      weekendHours: 0,
+                      holidayHours: 0,
+                      hardshipHours: 0,
+                    });
+                  } else {
+                    updateIncome({ averageHourlyWage: input.income.averageHourlyWage || PAYROLL_2026.labor.minimumMonthlyWage / 168 });
+                  }
+                }}
               >
                 <div className="field-grid">
                   <Field label="Odměna / prémie" suffix="Kč">
-                    <input value={rewardAmount} min={0} type="number" onChange={(event) => setRewardAmount(Number(event.target.value))} />
+                    <input
+                      value={input.income.rewardAmount}
+                      min={0}
+                      type="number"
+                      onChange={(event) => updateIncome({ rewardAmount: clampInputNumber(Number(event.target.value)) })}
+                    />
                   </Field>
                   <Field label="Osobní ohodnocení" suffix="Kč">
                     <input
-                      value={personalBonusAmount}
+                      value={input.income.personalBonusAmount}
                       min={0}
                       type="number"
-                      onChange={(event) => setPersonalBonusAmount(Number(event.target.value))}
+                      onChange={(event) => updateIncome({ personalBonusAmount: clampInputNumber(Number(event.target.value)) })}
                     />
                   </Field>
                   <Field label="Jiný zdanitelný příjem" suffix="Kč">
                     <input
-                      value={otherTaxableIncomeAmount}
+                      value={input.income.otherTaxableIncomeAmount}
                       min={0}
                       type="number"
-                      onChange={(event) => setOtherTaxableIncomeAmount(Number(event.target.value))}
+                      onChange={(event) => updateIncome({ otherTaxableIncomeAmount: clampInputNumber(Number(event.target.value)) })}
                     />
                   </Field>
-                  <Field label="Průměrná hodinová mzda" suffix="Kč">
+                  <Field label="Průměrný hodinový výdělek" suffix="Kč">
                     <input
-                      value={Math.round(averageHourlyWage)}
+                      value={Math.round(input.income.averageHourlyWage)}
                       min={0}
                       type="number"
-                      onChange={(event) => setAverageHourlyWage(Number(event.target.value))}
+                      onChange={(event) => updateIncome({ averageHourlyWage: clampInputNumber(Number(event.target.value)) })}
                     />
                   </Field>
                 </div>
 
                 <div className="supplement-grid">
-                  {employmentType === "hpp" ? (
-                    <Field label="Přesčas 25 %" suffix="h" compact>
-                      <input
-                        value={overtimeHours}
-                        min={0}
-                        step="0.5"
-                        type="number"
-                        onChange={(event) => setOvertimeHours(Number(event.target.value))}
-                      />
-                    </Field>
-                  ) : null}
-                  <Field label="Noc 10 %" suffix="h" compact>
-                    <input value={nightHours} min={0} step="0.5" type="number" onChange={(event) => setNightHours(Number(event.target.value))} />
-                  </Field>
-                  <Field label="Víkend 10 %" suffix="h" compact>
+                  <Field label="Přesčas 25 %" suffix="h" compact>
                     <input
-                      value={weekendHours}
+                      value={input.income.overtimeHours}
                       min={0}
                       step="0.5"
                       type="number"
-                      onChange={(event) => setWeekendHours(Number(event.target.value))}
+                      disabled={input.employment.type !== "hpp"}
+                      onChange={(event) => updateIncome({ overtimeHours: clampInputNumber(Number(event.target.value)) })}
+                    />
+                  </Field>
+                  <Field label="Noc 10 %" suffix="h" compact>
+                    <input
+                      value={input.income.nightHours}
+                      min={0}
+                      step="0.5"
+                      type="number"
+                      onChange={(event) => updateIncome({ nightHours: clampInputNumber(Number(event.target.value)) })}
+                    />
+                  </Field>
+                  <Field label="Víkend 10 %" suffix="h" compact>
+                    <input
+                      value={input.income.weekendHours}
+                      min={0}
+                      step="0.5"
+                      type="number"
+                      onChange={(event) => updateIncome({ weekendHours: clampInputNumber(Number(event.target.value)) })}
                     />
                   </Field>
                   <Field label="Svátek 100 %" suffix="h" compact>
                     <input
-                      value={holidayHours}
+                      value={input.income.holidayHours}
                       min={0}
                       step="0.5"
                       type="number"
-                      onChange={(event) => setHolidayHours(Number(event.target.value))}
+                      onChange={(event) => updateIncome({ holidayHours: clampInputNumber(Number(event.target.value)) })}
                     />
                   </Field>
-                  <Field label={`Ztížené ${hardshipRate} %`} suffix="h" compact>
+                  <Field label={`Ztížené ${input.income.hardshipRate} %`} suffix="h" compact>
                     <input
-                      value={hardshipHours}
+                      value={input.income.hardshipHours}
                       min={0}
                       step="0.5"
                       type="number"
-                      onChange={(event) => setHardshipHours(Number(event.target.value))}
+                      onChange={(event) => updateIncome({ hardshipHours: clampInputNumber(Number(event.target.value)) })}
                     />
                   </Field>
                   <Field label="Sazba ztíženého" suffix="%" compact>
                     <input
-                      value={hardshipRate}
+                      value={input.income.hardshipRate}
                       min={0}
                       type="number"
-                      onChange={(event) => setHardshipRate(Number(event.target.value))}
+                      onChange={(event) => updateIncome({ hardshipRate: clampInputNumber(Number(event.target.value)) })}
                     />
                   </Field>
                 </div>
-                {employmentType !== "hpp" ? (
-                  <p className="inline-note">U DPP/DPČ není přesčasový příplatek v kalkulačce nabízený.</p>
+                {input.employment.type !== "hpp" ? (
+                  <p className="inline-note">U DPP/DPČ se přesčasový příplatek v této kalkulačce nezapočítá.</p>
                 ) : null}
               </OptionalSection>
+
+              {expertMode ? (
+                <section className="optional-section open expert-panel" aria-label="Expertní nastavení">
+                  <div className="optional-toggle static">
+                    <span>
+                      <ShieldCheck size={17} aria-hidden="true" />
+                      Expertní nastavení
+                    </span>
+                  </div>
+
+                  <div className="field-grid">
+                    <Field label="Děti ZTP/P" suffix="dětí">
+                      <input
+                        value={input.taxpayer.ztpPChildrenCount}
+                        min={0}
+                        max={input.taxpayer.childrenCount}
+                        type="number"
+                        onChange={(event) => updateTaxpayer({ ztpPChildrenCount: clampInputNumber(Number(event.target.value)) })}
+                      />
+                    </Field>
+                    <label className="field">
+                      <span className="field-label">Invalidita</span>
+                      <select
+                        value={input.taxpayer.disability}
+                        onChange={(event) => updateTaxpayer({ disability: event.target.value as DisabilityDiscount })}
+                      >
+                        <option value="none">Bez slevy</option>
+                        <option value="basic">Invalidita I./II. stupně</option>
+                        <option value="advanced">Invalidita III. stupně</option>
+                      </select>
+                    </label>
+                    <label className="field">
+                      <span className="field-label">DPČ režim</span>
+                      <select
+                        value={input.employment.dpcRegime}
+                        disabled={input.employment.type !== "dpc"}
+                        onChange={(event) => updateEmployment({ dpcRegime: event.target.value as DpcRegime })}
+                      >
+                        <option value="smallScope">Zaměstnání malého rozsahu</option>
+                        <option value="standard">Standardní DPČ</option>
+                      </select>
+                    </label>
+                    <Field label="Další dohody u stejného plátce" suffix="Kč">
+                      <input
+                        value={input.employment.otherAgreementIncomeSamePayer}
+                        min={0}
+                        type="number"
+                        onChange={(event) =>
+                          updateEmployment({ otherAgreementIncomeSamePayer: clampInputNumber(Number(event.target.value)) })
+                        }
+                      />
+                    </Field>
+                    <label className="field">
+                      <span className="field-label">Zdravotní minimum</span>
+                      <select
+                        value={input.insurance.healthMinimumMode}
+                        onChange={(event) => updateInsurance({ healthMinimumMode: event.target.value as HealthMinimumMode })}
+                      >
+                        {Object.entries(healthMinimumLabels).map(([value, label]) => (
+                          <option key={value} value={value}>
+                            {label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <Field label="Dny pro poměrné minimum" suffix="dní">
+                      <input
+                        value={input.insurance.healthMinimumDays}
+                        min={0}
+                        max={input.insurance.daysInMonth}
+                        type="number"
+                        disabled={input.insurance.healthMinimumMode !== "prorated"}
+                        onChange={(event) => updateInsurance({ healthMinimumDays: clampInputNumber(Number(event.target.value)) })}
+                      />
+                    </Field>
+                    <Field label="Již dosažený sociální základ v roce" suffix="Kč">
+                      <input
+                        value={input.yearToDate.socialAssessmentBaseBeforeMonth}
+                        min={0}
+                        type="number"
+                        onChange={(event) =>
+                          updateYearToDate({ socialAssessmentBaseBeforeMonth: clampInputNumber(Number(event.target.value)) })
+                        }
+                      />
+                    </Field>
+                    <label className="field">
+                      <span className="field-label">Sazba zaměstnavatele</span>
+                      <select
+                        value={input.employment.employerSocialProfile}
+                        onChange={(event) =>
+                          updateEmployment({ employerSocialProfile: event.target.value as EmployerSocialProfile })
+                        }
+                      >
+                        {Object.entries(employerProfileLabels).map(([value, label]) => (
+                          <option key={value} value={value}>
+                            {label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+
+                  <div className="check-grid">
+                    <label className="switch-row">
+                      <span>Poplatník je držitel ZTP/P</span>
+                      <input
+                        type="checkbox"
+                        checked={input.taxpayer.ztpP}
+                        onChange={(event) => updateTaxpayer({ ztpP: event.target.checked })}
+                      />
+                    </label>
+                    <label className="switch-row">
+                      <span>Pracující starobní důchodce</span>
+                      <input
+                        type="checkbox"
+                        checked={input.taxpayer.workingPensioner}
+                        onChange={(event) => updateTaxpayer({ workingPensioner: event.target.checked })}
+                      />
+                    </label>
+                    <label className="switch-row">
+                      <span>Exekuce / soudní srážky</span>
+                      <input
+                        type="checkbox"
+                        checked={input.taxpayer.hasExecution}
+                        onChange={(event) => updateTaxpayer({ hasExecution: event.target.checked })}
+                      />
+                    </label>
+                    <label className="switch-row">
+                      <span>Insolvence</span>
+                      <input
+                        type="checkbox"
+                        checked={input.taxpayer.hasInsolvency}
+                        onChange={(event) => updateTaxpayer({ hasInsolvency: event.target.checked })}
+                      />
+                    </label>
+                    <label className="switch-row">
+                      <span>Nemoc / náhrada mzdy</span>
+                      <input
+                        type="checkbox"
+                        checked={input.taxpayer.hasSickLeave}
+                        onChange={(event) => updateTaxpayer({ hasSickLeave: event.target.checked })}
+                      />
+                    </label>
+                    <label className="switch-row">
+                      <span>Souběh více zaměstnavatelů</span>
+                      <input
+                        type="checkbox"
+                        checked={input.taxpayer.hasMultipleEmployers}
+                        onChange={(event) => updateTaxpayer({ hasMultipleEmployers: event.target.checked })}
+                      />
+                    </label>
+                    <label className="switch-row">
+                      <span>Daňový nerezident ČR</span>
+                      <input
+                        type="checkbox"
+                        checked={input.taxpayer.isForeignTaxResident}
+                        onChange={(event) => updateTaxpayer({ isForeignTaxResident: event.target.checked })}
+                      />
+                    </label>
+                  </div>
+                </section>
+              ) : null}
             </div>
           </section>
 
           <section className="result-pane" aria-label="Výsledek výpočtu">
             <div className="result-head">
               <div>
-                <p className="eyebrow">{mode === "netToGross" ? "Dopočtený výsledek" : "Čistý výstup"}</p>
+                <p className="eyebrow">{input.calculation.mode === "netToGross" ? "Dopočtený výsledek" : "Čistý výstup"}</p>
                 <h2>{primaryLabel}</h2>
               </div>
               <span className={result.insuranceApplies ? "status-pill success" : "status-pill"}>
@@ -420,22 +594,45 @@ export function PayrollCalculator() {
 
             <div className="result-number">{formatAmount(primaryResult)}</div>
             <p className="result-copy">
-              {mode === "netToGross"
-                ? `Základní hrubá mzda ${formatAmount(result.baseGrossWage)}, celkem s příplatky ${formatAmount(result.grossWage)}.`
+              {input.calculation.mode === "netToGross"
+                ? `Základní hrubá mzda ${formatAmount(result.baseGrossWage)}, čistý výsledek ${formatAmount(result.netCash)}.`
                 : `Zadaná základní hrubá mzda ${formatAmount(result.baseGrossWage)} dává čistý příjem ${formatAmount(result.netCash)}.`}
             </p>
+
+            {input.calculation.mode === "netToGross" ? (
+              <p className={result.accuracy.solverStatus === "exact" ? "accuracy-note exact" : "accuracy-note"}>
+                {result.accuracy.solverStatus === "exact"
+                  ? "Cílová čistá mzda sedí přesně."
+                  : `Odchylka od cíle: ${formatAmount(result.accuracy.difference)}.`}
+              </p>
+            ) : null}
+
+            {result.warnings.length > 0 ? (
+              <div className="alert-list" role="status" aria-live="polite">
+                {result.warnings.map((warning) => (
+                  <div key={`${warning.code}-${warning.message}`} className={`alert-row ${warning.severity}`}>
+                    <AlertTriangle size={17} aria-hidden="true" />
+                    <span>{warning.message}</span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
 
             <div className="summary-list">
               <SummaryRow icon={<WalletCards size={18} />} label="Čistá mzda" value={result.netWage} strong />
               <SummaryRow icon={<Plus size={18} />} label="Hrubá mzda celkem" value={result.grossWage} />
-              {useAdvancedPay && result.cashExtras > 0 ? <SummaryRow icon={<Gift size={18} />} label="Odměny a příplatky" value={result.cashExtras} /> : null}
-              <SummaryRow icon={<ReceiptText size={18} />} label={result.taxMode === "withholding" ? "Srážková daň" : "Daň po slevách"} value={result.taxAfterDiscounts} />
+              {result.cashExtras > 0 ? <SummaryRow icon={<Gift size={18} />} label="Odměny a příplatky" value={result.cashExtras} /> : null}
+              <SummaryRow
+                icon={<ReceiptText size={18} />}
+                label={result.taxMode === "withholding" ? "Srážková daň" : "Daň po slevách"}
+                value={result.taxAfterDiscounts}
+              />
               <SummaryRow icon={<CircleHelp size={18} />} label="Odvody zaměstnance" value={employeeDeductions} />
               <SummaryRow icon={<Calculator size={18} />} label="Náklady zaměstnavatele" value={result.employerCost} strong />
-              {useMealAllowance ? (
+              {input.benefits.mealAllowance.enabled ? (
                 <>
-                  <SummaryRow icon={<Utensils size={18} />} label="Stravenky celkem" value={result.mealAllowanceTotal} />
-                  <SummaryRow icon={<Utensils size={18} />} label="Osvobozená část stravenek" value={result.exemptMealAllowance} />
+                  <SummaryRow icon={<Utensils size={18} />} label="Příspěvek na stravování" value={result.mealAllowanceTotal} />
+                  <SummaryRow icon={<Utensils size={18} />} label="Osvobozená část" value={result.exemptMealAllowance} />
                 </>
               ) : null}
               <SummaryRow icon={<Baby size={18} />} label="Děti a daňový bonus" value={result.childTaxCredit + result.taxBonus} />
@@ -448,12 +645,14 @@ export function PayrollCalculator() {
                   <p className="eyebrow">Rozpad</p>
                   <h2>Výpočet mzdy</h2>
                 </div>
-                <span>{employmentLabels[employmentType]}</span>
+                <span>
+                  {employmentLabels[input.employment.type]} · {result.taxMode === "withholding" ? "srážková" : "zálohová"} daň
+                </span>
               </div>
 
               <div className="breakdown-list">
-                {result.rows.map((row) => (
-                  <div key={row.label} className={row.tone ? `breakdown-row row-${row.tone}` : "breakdown-row"}>
+                {result.lines.map((row) => (
+                  <div key={`${row.label}-${row.amount}`} className={row.tone ? `breakdown-row row-${row.tone}` : "breakdown-row"}>
                     <span>{row.label}</span>
                     <strong>{row.amount < 0 ? `-${formatAmount(Math.abs(row.amount))}` : formatAmount(row.amount)}</strong>
                   </div>
@@ -463,9 +662,39 @@ export function PayrollCalculator() {
           </section>
         </div>
 
-        <footer className="disclaimer">
-          Výpočet je orientační. Neřeší exekuce, nemocenskou, roční stropy, rizikové profese, pracující důchodce ani souběhy zaměstnání.
-        </footer>
+        <section className="methodology" aria-label="Metodika výpočtu">
+          <div className="methodology-head">
+            <div>
+              <p className="eyebrow">Metodika</p>
+              <h2>Co kalkulačka umí a kde se zastaví</h2>
+            </div>
+            <span className="status-pill">ověřeno 4. 5. 2026</span>
+          </div>
+          <div className="methodology-grid">
+            <div>
+              <h3>Počítá</h3>
+              <p>
+                HPP, DPP a DPČ, zálohovou i srážkovou daň, sociální a zdravotní pojistné, zdravotní minimum,
+                sociální roční maximum, základní slevy, děti včetně ZTP/P a peněžitý příspěvek na stravování.
+              </p>
+            </div>
+            <div>
+              <h3>Označí jako mimo model</h3>
+              <p>
+                Exekuce, insolvenci, nemocenskou, plný roční payroll, speciální zahraniční režimy a souběhy, které
+                vyžadují další mzdové doklady nebo roční kontext.
+              </p>
+            </div>
+          </div>
+          <div className="source-grid">
+            {result.sources.map((source) => (
+              <a key={source.id} href={source.url} target="_blank" rel="noreferrer">
+                <Info size={15} aria-hidden="true" />
+                <span>{source.label}</span>
+              </a>
+            ))}
+          </div>
+        </section>
       </section>
     </main>
   );

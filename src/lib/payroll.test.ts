@@ -1,114 +1,153 @@
 import { describe, expect, it } from "vitest";
-import { calculatePayroll, grossToNet, PAYROLL_2026 } from "./payroll";
+import {
+  calculatePayroll,
+  createDefaultPayrollInput,
+  grossToNet,
+  PAYROLL_2026,
+  type EmploymentType,
+  type PayrollInput,
+} from "./payroll";
 
-const baseInput = {
-  employmentType: "hpp" as const,
-  signedDeclaration: true,
-  childrenCount: 0,
-  useMealAllowance: false,
-  workedDays: 21,
-  mealAllowancePerDay: PAYROLL_2026.mealAllowanceExemptLimit,
-  includeMealAllowanceInNet: false,
-  applyHealthMinimum: true,
-  rewardAmount: 0,
-  personalBonusAmount: 0,
-  otherTaxableIncomeAmount: 0,
-  averageHourlyWage: 250,
-  overtimeHours: 0,
-  nightHours: 0,
-  weekendHours: 0,
-  holidayHours: 0,
-  hardshipHours: 0,
-  hardshipRate: 10,
-};
+function input(overrides: Parameters<typeof createDefaultPayrollInput>[0] = {}) {
+  return createDefaultPayrollInput(overrides);
+}
 
-describe("payroll 2026", () => {
+function gross(amount: number, overrides: Parameters<typeof createDefaultPayrollInput>[0] = {}) {
+  const base = input(overrides);
+  return grossToNet({
+    ...base,
+    calculation: {
+      ...base.calculation,
+      mode: "grossToNet",
+      amount,
+    },
+  });
+}
+
+describe("payroll 2026 production engine", () => {
   it("reverses HPP target net to gross within one koruna", () => {
-    const result = calculatePayroll({
-      ...baseInput,
-      mode: "netToGross",
-      amount: 30_000,
-      childrenCount: 2,
-    });
+    const result = calculatePayroll(
+      input({
+        calculation: { mode: "netToGross", amount: 30_000 },
+        taxpayer: { childrenCount: 2 },
+      }),
+    );
 
     expect(Math.abs(result.netCash - 30_000)).toBeLessThanOrEqual(1);
     expect(result.grossWage).toBeGreaterThan(30_000);
-    expect(result.insuranceApplies).toBe(true);
+    expect(result.insuranceParticipation.social).toBe(true);
+    expect(["exact", "approximate"]).toContain(result.accuracy.solverStatus);
   });
 
   it("calculates lower HPP tax when declaration is signed", () => {
-    const signed = grossToNet({ ...baseInput, baseGrossWage: 45_000, signedDeclaration: true });
-    const unsigned = grossToNet({ ...baseInput, baseGrossWage: 45_000, signedDeclaration: false });
+    const signed = gross(45_000, { taxpayer: { signedDeclaration: true } });
+    const unsigned = gross(45_000, { taxpayer: { signedDeclaration: false } });
 
     expect(signed.netCash).toBeGreaterThan(unsigned.netCash);
-    expect(signed.taxpayerDiscount).toBe(2_570);
+    expect(signed.taxpayerDiscount).toBe(PAYROLL_2026.tax.taxpayerDiscount);
     expect(unsigned.taxpayerDiscount).toBe(0);
   });
 
-  it("applies child credits and tax bonus", () => {
-    const result = grossToNet({ ...baseInput, baseGrossWage: 25_000, childrenCount: 3 });
-
-    expect(result.childTaxCredit).toBe(5_447);
-    expect(result.taxBonus).toBeGreaterThanOrEqual(0);
-  });
-
-  it("keeps DPP under threshold without insurance and withholding tax", () => {
-    const result = grossToNet({
-      ...baseInput,
-      employmentType: "dpp",
-      signedDeclaration: false,
-      baseGrossWage: 11_999,
-      workedDays: 0,
-      mealAllowancePerDay: 0,
+  it("applies child credits including ZTP/P child assigned to the highest order", () => {
+    const result = gross(35_000, {
+      taxpayer: {
+        childrenCount: 3,
+        ztpPChildrenCount: 1,
+      },
     });
 
-    expect(result.insuranceApplies).toBe(false);
+    expect(result.childTaxCredit).toBe(1_267 + 1_860 + 2_320 * 2);
+    expect(result.assumptions.some((assumption) => assumption.label === "Děti ZTP/P")).toBe(true);
+  });
+
+  it("does not pay monthly tax bonus below the 2026 monthly income threshold", () => {
+    const result = gross(10_000, {
+      taxpayer: {
+        childrenCount: 1,
+        signedDeclaration: true,
+      },
+      insurance: { healthMinimumMode: "exempt" },
+    });
+
+    expect(result.taxBonus).toBe(0);
+    expect(result.unusedTaxBonus).toBeGreaterThan(0);
+    expect(result.warnings.some((warning) => warning.code === "tax-bonus-not-paid")).toBe(true);
+  });
+
+  it("pays monthly tax bonus once income reaches the monthly threshold", () => {
+    const result = gross(12_000, {
+      taxpayer: {
+        childrenCount: 1,
+        signedDeclaration: true,
+      },
+      insurance: { healthMinimumMode: "exempt" },
+    });
+
+    expect(result.taxBonus).toBeGreaterThan(0);
+    expect(result.unusedTaxBonus).toBe(0);
+  });
+
+  it("keeps DPP under threshold without insurance and with withholding tax", () => {
+    const result = gross(11_999, {
+      employment: { type: "dpp" },
+      taxpayer: { signedDeclaration: false },
+      insurance: { healthMinimumMode: "exempt" },
+    });
+
+    expect(result.insuranceParticipation.social).toBe(false);
     expect(result.employeeSocial).toBe(0);
     expect(result.employeeHealth).toBe(0);
     expect(result.taxMode).toBe("withholding");
   });
 
-  it("turns DPP insurance on at threshold", () => {
-    const result = grossToNet({
-      ...baseInput,
-      employmentType: "dpp",
-      baseGrossWage: 12_000,
-      workedDays: 0,
-      mealAllowancePerDay: 0,
+  it("turns DPP insurance on at 12 000 Kč including same payer aggregation", () => {
+    const result = gross(8_000, {
+      employment: {
+        type: "dpp",
+        otherAgreementIncomeSamePayer: 4_000,
+      },
+      insurance: { healthMinimumMode: "exempt" },
     });
 
-    expect(result.insuranceApplies).toBe(true);
+    expect(result.insuranceParticipation.thresholdIncome).toBe(12_000);
+    expect(result.insuranceParticipation.social).toBe(true);
     expect(result.employeeSocial).toBeGreaterThan(0);
-    expect(result.employeeHealth).toBeGreaterThan(0);
+    expect(result.taxMode).toBe("advance");
   });
 
-  it("turns DPČ insurance on from 4 500 Kč", () => {
-    const under = grossToNet({
-      ...baseInput,
-      employmentType: "dpc",
-      baseGrossWage: 4_499,
-      workedDays: 0,
-      mealAllowancePerDay: 0,
+  it("turns DPČ small-scope insurance on from 4 500 Kč", () => {
+    const under = gross(4_499, {
+      employment: { type: "dpc", dpcRegime: "smallScope" },
+      insurance: { healthMinimumMode: "exempt" },
     });
-    const threshold = grossToNet({
-      ...baseInput,
-      employmentType: "dpc",
-      baseGrossWage: 4_500,
-      workedDays: 0,
-      mealAllowancePerDay: 0,
+    const threshold = gross(4_500, {
+      employment: { type: "dpc", dpcRegime: "smallScope" },
+      insurance: { healthMinimumMode: "exempt" },
     });
 
-    expect(under.insuranceApplies).toBe(false);
-    expect(threshold.insuranceApplies).toBe(true);
+    expect(under.insuranceParticipation.social).toBe(false);
+    expect(threshold.insuranceParticipation.social).toBe(true);
+  });
+
+  it("treats standard DPČ as insured even below small-scope threshold", () => {
+    const result = gross(3_000, {
+      employment: { type: "dpc", dpcRegime: "standard" },
+      insurance: { healthMinimumMode: "exempt" },
+    });
+
+    expect(result.insuranceParticipation.social).toBe(true);
+    expect(result.employeeSocial).toBeGreaterThan(0);
   });
 
   it("splits meal allowance into exempt and taxable parts", () => {
-    const result = grossToNet({
-      ...baseInput,
-      useMealAllowance: true,
-      baseGrossWage: 40_000,
-      workedDays: 10,
-      mealAllowancePerDay: 150,
+    const result = gross(40_000, {
+      benefits: {
+        mealAllowance: {
+          enabled: true,
+          eligibleShifts: 10,
+          amountPerShift: 150,
+        },
+      },
     });
 
     expect(result.mealAllowanceTotal).toBe(1_500);
@@ -116,38 +155,36 @@ describe("payroll 2026", () => {
     expect(result.taxableMealAllowance).toBe(205);
   });
 
-  it("hides meal allowance rows and amounts by default", () => {
-    const result = grossToNet({ ...baseInput, baseGrossWage: 40_000 });
-
-    expect(result.mealAllowanceTotal).toBe(0);
-    expect(result.rows.some((row) => row.label.includes("Stravenky"))).toBe(false);
-  });
-
-  it("adds rewards and personal bonus to gross wage and employer cost", () => {
-    const plain = grossToNet({ ...baseInput, baseGrossWage: 40_000 });
-    const withExtras = grossToNet({
-      ...baseInput,
-      baseGrossWage: 40_000,
-      rewardAmount: 2_000,
-      personalBonusAmount: 1_500,
+  it("taxes the whole meal allowance when travel meal entitlement is flagged", () => {
+    const result = gross(40_000, {
+      benefits: {
+        mealAllowance: {
+          enabled: true,
+          eligibleShifts: 2,
+          amountPerShift: 120,
+          travelMealEntitlement: true,
+        },
+      },
     });
 
-    expect(withExtras.grossWage).toBe(43_500);
-    expect(withExtras.netCash).toBeGreaterThan(plain.netCash);
-    expect(withExtras.employerCost).toBeGreaterThan(plain.employerCost);
+    expect(result.exemptMealAllowance).toBe(0);
+    expect(result.taxableMealAllowance).toBe(240);
+    expect(result.warnings.some((warning) => warning.code === "meal-travel-entitlement")).toBe(true);
   });
 
-  it("calculates common pay supplements", () => {
-    const result = grossToNet({
-      ...baseInput,
-      baseGrossWage: 40_000,
-      averageHourlyWage: 200,
-      overtimeHours: 4,
-      nightHours: 10,
-      weekendHours: 8,
-      holidayHours: 2,
-      hardshipHours: 5,
-      hardshipRate: 12,
+  it("adds rewards and common pay supplements to gross wage and employer cost", () => {
+    const result = gross(40_000, {
+      income: {
+        rewardAmount: 2_000,
+        personalBonusAmount: 1_500,
+        averageHourlyWage: 200,
+        overtimeHours: 4,
+        nightHours: 10,
+        weekendHours: 8,
+        holidayHours: 2,
+        hardshipHours: 5,
+        hardshipRate: 12,
+      },
     });
 
     expect(result.overtimeSupplement).toBe(200);
@@ -155,41 +192,105 @@ describe("payroll 2026", () => {
     expect(result.weekendSupplement).toBe(160);
     expect(result.holidaySupplement).toBe(400);
     expect(result.hardshipSupplement).toBe(120);
-    expect(result.supplementsTotal).toBe(1_080);
+    expect(result.grossWage).toBe(44_580);
+    expect(result.employerCost).toBeGreaterThan(result.grossWage);
   });
 
-  it("does not apply overtime supplement for DPP and DPČ", () => {
-    const dpp = grossToNet({
-      ...baseInput,
-      employmentType: "dpp",
-      baseGrossWage: 20_000,
-      averageHourlyWage: 250,
-      overtimeHours: 10,
-    });
-    const dpc = grossToNet({
-      ...baseInput,
-      employmentType: "dpc",
-      baseGrossWage: 20_000,
-      averageHourlyWage: 250,
-      overtimeHours: 10,
-    });
+  it("uses the 23% tax band above the 2026 monthly threshold", () => {
+    const result = gross(200_000);
+    const expectedTax = Math.ceil(
+      PAYROLL_2026.tax.highMonthlyThreshold * PAYROLL_2026.tax.standardRate +
+        (200_000 - PAYROLL_2026.tax.highMonthlyThreshold) * PAYROLL_2026.tax.highRate,
+    );
 
-    expect(dpp.overtimeSupplement).toBe(0);
-    expect(dpc.overtimeSupplement).toBe(0);
+    expect(result.taxBase).toBe(200_000);
+    expect(result.taxBeforeDiscounts).toBe(expectedTax);
   });
 
-  it("reverses HPP target net with known rewards", () => {
-    const result = calculatePayroll({
-      ...baseInput,
-      mode: "netToGross",
-      amount: 35_000,
-      rewardAmount: 3_000,
-      personalBonusAmount: 2_000,
-      averageHourlyWage: 250,
-      nightHours: 4,
+  it("caps social insurance by the annual maximum assessment base", () => {
+    const result = gross(100_000, {
+      yearToDate: {
+        socialAssessmentBaseBeforeMonth: PAYROLL_2026.social.annualMaximumAssessmentBase - 1_000,
+      },
     });
 
-    expect(Math.abs(result.netCash - 35_000)).toBeLessThanOrEqual(1);
-    expect(result.cashExtras).toBe(5_100);
+    expect(result.socialAssessmentBase).toBe(1_000);
+    expect(result.employeeSocialBeforeDiscount).toBe(71);
+    expect(result.warnings.some((warning) => warning.code === "social-cap-used")).toBe(true);
+  });
+
+  it("applies working pensioner social insurance discount with separate rounding", () => {
+    const result = gross(40_000, {
+      taxpayer: { workingPensioner: true },
+    });
+
+    expect(result.employeeSocialBeforeDiscount).toBe(2_840);
+    expect(result.employeeSocialDiscount).toBe(2_600);
+    expect(result.employeeSocial).toBe(240);
+  });
+
+  it("supports full, prorated and exempt health minimum modes", () => {
+    const full = gross(10_000, { insurance: { healthMinimumMode: "full" } });
+    const prorated = gross(10_000, {
+      insurance: {
+        healthMinimumMode: "prorated",
+        healthMinimumDays: 15,
+        daysInMonth: 30,
+      },
+    });
+    const exempt = gross(10_000, { insurance: { healthMinimumMode: "exempt" } });
+
+    expect(full.healthAssessmentBase).toBe(22_400);
+    expect(prorated.healthAssessmentBase).toBe(11_200);
+    expect(exempt.healthAssessmentBase).toBe(10_000);
+  });
+
+  it("flags explicitly unsupported payroll-grade scenarios instead of silently ignoring them", () => {
+    const result = gross(40_000, {
+      taxpayer: {
+        hasExecution: true,
+        hasInsolvency: true,
+        hasSickLeave: true,
+      },
+    });
+
+    expect(result.unsupportedReasons).toHaveLength(3);
+    expect(result.warnings.filter((warning) => warning.severity === "unsupported")).toHaveLength(3);
+  });
+
+  it.each<EmploymentType>(["hpp", "dpp", "dpc"])("never returns NaN for supported %s scenarios", (employmentType) => {
+    const samples: PayrollInput[] = [
+      input({
+        calculation: { mode: "grossToNet", amount: 0 },
+        employment: { type: employmentType },
+      }),
+      input({
+        calculation: { mode: "grossToNet", amount: 123_456 },
+        employment: { type: employmentType },
+        taxpayer: { childrenCount: 4, ztpPChildrenCount: 2, workingPensioner: true },
+        benefits: { mealAllowance: { enabled: true, eligibleShifts: 31, amountPerShift: 300, includeInNet: true } },
+      }),
+    ];
+
+    for (const sample of samples) {
+      const result = calculatePayroll(sample);
+      const numericValues = [
+        result.grossWage,
+        result.netCash,
+        result.taxableIncome,
+        result.employeeSocial,
+        result.employeeHealth,
+        result.taxAfterDiscounts,
+        result.employerCost,
+      ];
+
+      expect(numericValues.every((value) => Number.isFinite(value))).toBe(true);
+      expect(result.employeeSocial).toBeGreaterThanOrEqual(0);
+      expect(result.employeeHealth).toBeGreaterThanOrEqual(0);
+      expect(result.taxAfterDiscounts).toBeGreaterThanOrEqual(0);
+      if (result.netCash < 0) {
+        expect(result.warnings.some((warning) => warning.code === "negative-net-cash")).toBe(true);
+      }
+    }
   });
 });
