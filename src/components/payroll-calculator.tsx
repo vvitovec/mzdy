@@ -92,12 +92,22 @@ function clampInputNumber(value: number, min = 0) {
 export function PayrollCalculator() {
   const [input, setInput] = useState<PayrollInput>(defaultInput);
   const [expertMode, setExpertMode] = useState(false);
+  const [extrasOpen, setExtrasOpen] = useState(false);
   const result = useMemo(() => calculatePayroll(input), [input]);
   const employeeDeductions = result.employeeSocial + result.employeeHealth + result.taxAfterDiscounts - result.taxBonus;
   const employerInsurance = result.employerSocial + result.employerHealth;
   const primaryResult = input.calculation.mode === "netToGross" ? result.grossWage : result.netCash;
   const primaryLabel = input.calculation.mode === "netToGross" ? "Hrubá mzda celkem" : "Čistý příjem";
   const hasUnsupportedWarnings = result.warnings.some((warning) => warning.severity === "unsupported");
+  const hasIncomeExtras =
+    input.income.rewardAmount > 0 ||
+    input.income.personalBonusAmount > 0 ||
+    input.income.otherTaxableIncomeAmount > 0 ||
+    input.income.overtimeHours > 0 ||
+    input.income.nightHours > 0 ||
+    input.income.weekendHours > 0 ||
+    input.income.holidayHours > 0 ||
+    input.income.hardshipHours > 0;
 
   const updateCalculation = (patch: Partial<PayrollInput["calculation"]>) => {
     setInput((current) => ({ ...current, calculation: { ...current.calculation, ...patch } }));
@@ -138,6 +148,7 @@ export function PayrollCalculator() {
   const reset = () => {
     setInput(createDefaultPayrollInput());
     setExpertMode(false);
+    setExtrasOpen(false);
   };
 
   return (
@@ -149,12 +160,13 @@ export function PayrollCalculator() {
           </div>
           <div>
             <div className="brand">Mzdová kalkulačka</div>
-            <div className="brand-subtitle">2026 · HPP, DPP, DPČ</div>
+            <div className="brand-subtitle">HPP · DPP · DPČ</div>
           </div>
         </div>
         <div className="nav-links">
-          <span className={hasUnsupportedWarnings ? "credit-chip danger" : "credit-chip"}>zdrojovaný výpočet</span>
-          <a href="https://vvitovec.com">vvitovec.com</a>
+          <span className={hasUnsupportedWarnings ? "credit-chip danger" : "credit-chip"}>
+            {hasUnsupportedWarnings ? "mimo model" : "pravidla 2026"}
+          </span>
         </div>
       </nav>
 
@@ -164,7 +176,7 @@ export function PayrollCalculator() {
             <p className="eyebrow">Čistá · hrubá · náklady</p>
             <h1>Mzdová kalkulačka 2026</h1>
           </div>
-          <p>Výpočet mzdy, odvodů a nákladů zaměstnavatele s expertními volbami pro běžné české scénáře.</p>
+          <p>Rychlý výpočet mzdy, odvodů a celkového nákladu pro běžnou práci mzdové účetní nebo zaměstnavatele.</p>
         </header>
 
         <div className="calculator-shell">
@@ -294,18 +306,10 @@ export function PayrollCalculator() {
               <OptionalSection
                 icon={<Gift size={17} aria-hidden="true" />}
                 title="Přidat odměny a příplatky"
-                enabled={
-                  input.income.rewardAmount > 0 ||
-                  input.income.personalBonusAmount > 0 ||
-                  input.income.otherTaxableIncomeAmount > 0 ||
-                  input.income.overtimeHours > 0 ||
-                  input.income.nightHours > 0 ||
-                  input.income.weekendHours > 0 ||
-                  input.income.holidayHours > 0 ||
-                  input.income.hardshipHours > 0
-                }
+                enabled={extrasOpen || hasIncomeExtras}
                 onChange={(enabled) => {
                   if (!enabled) {
+                    setExtrasOpen(false);
                     updateIncome({
                       rewardAmount: 0,
                       personalBonusAmount: 0,
@@ -317,6 +321,7 @@ export function PayrollCalculator() {
                       hardshipHours: 0,
                     });
                   } else {
+                    setExtrasOpen(true);
                     updateIncome({ averageHourlyWage: input.income.averageHourlyWage || PAYROLL_2026.labor.minimumMonthlyWage / 168 });
                   }
                 }}
@@ -627,7 +632,7 @@ export function PayrollCalculator() {
                 label={result.taxMode === "withholding" ? "Srážková daň" : "Daň po slevách"}
                 value={result.taxAfterDiscounts}
               />
-              <SummaryRow icon={<CircleHelp size={18} />} label="Odvody zaměstnance" value={employeeDeductions} />
+              <SummaryRow icon={<CircleHelp size={18} />} label="Srážky zaměstnance" value={employeeDeductions} />
               <SummaryRow icon={<Calculator size={18} />} label="Náklady zaměstnavatele" value={result.employerCost} strong />
               {input.benefits.mealAllowance.enabled ? (
                 <>
@@ -635,7 +640,9 @@ export function PayrollCalculator() {
                   <SummaryRow icon={<Utensils size={18} />} label="Osvobozená část" value={result.exemptMealAllowance} />
                 </>
               ) : null}
-              <SummaryRow icon={<Baby size={18} />} label="Děti a daňový bonus" value={result.childTaxCredit + result.taxBonus} />
+              {input.taxpayer.childrenCount > 0 || result.childTaxCredit + result.taxBonus > 0 ? (
+                <SummaryRow icon={<Baby size={18} />} label="Děti a daňový bonus" value={result.childTaxCredit + result.taxBonus} />
+              ) : null}
               <SummaryRow icon={<ChevronDown size={18} />} label="Odvody zaměstnavatele" value={employerInsurance} />
             </div>
 
@@ -666,7 +673,7 @@ export function PayrollCalculator() {
           <div className="methodology-head">
             <div>
               <p className="eyebrow">Metodika</p>
-              <h2>Co kalkulačka umí a kde se zastaví</h2>
+              <h2>Rozsah výpočtu</h2>
             </div>
             <span className="status-pill">ověřeno 4. 5. 2026</span>
           </div>
@@ -675,14 +682,14 @@ export function PayrollCalculator() {
               <h3>Počítá</h3>
               <p>
                 HPP, DPP a DPČ, zálohovou i srážkovou daň, sociální a zdravotní pojistné, zdravotní minimum,
-                sociální roční maximum, základní slevy, děti včetně ZTP/P a peněžitý příspěvek na stravování.
+                roční sociální maximum, základní slevy, děti včetně ZTP/P a příspěvek na stravování.
               </p>
             </div>
             <div>
-              <h3>Označí jako mimo model</h3>
+              <h3>Mimo model</h3>
               <p>
-                Exekuce, insolvenci, nemocenskou, plný roční payroll, speciální zahraniční režimy a souběhy, které
-                vyžadují další mzdové doklady nebo roční kontext.
+                Exekuce, insolvence, nemocenská, plný roční payroll, speciální zahraniční režimy a souběhy, které
+                potřebují další mzdové doklady nebo roční kontext.
               </p>
             </div>
           </div>

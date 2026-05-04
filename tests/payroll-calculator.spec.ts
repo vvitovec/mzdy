@@ -40,3 +40,61 @@ test("large numbers and keyboard navigation keep the layout usable", async ({ pa
   await expect(page.getByText("Náklady zaměstnavatele").first()).toBeVisible();
   await expect(page.locator(".result-number")).toBeVisible();
 });
+
+test("optional payroll inputs can be clicked through and reset", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Hrubá → čistá" }).click();
+  await page.getByLabel("Základní hrubá mzda").fill("52000");
+  await page.getByLabel("Přidat příspěvek na stravování").check();
+  await page.getByLabel("Příspěvek za směnu").fill("150");
+  await page.getByLabel("Způsobilé směny").fill("18");
+  await page.getByLabel("Započítat příspěvek do čistého příjmu").check();
+  await page.getByLabel("Přidat odměny a příplatky").check();
+  await page.getByLabel("Odměna / prémie").fill("3000");
+  await page.getByLabel("Průměrný hodinový výdělek").fill("250");
+  await page.getByLabel("Noc 10 %").fill("6");
+  await page.getByLabel("Víkend 10 %").fill("4");
+
+  await expect(page.getByText("Příspěvek na stravování").first()).toBeVisible();
+  await expect(page.getByText("Odměny a příplatky").first()).toBeVisible();
+
+  await page.getByLabel("Expertní režim").check();
+  await page.getByLabel("Typ vztahu").selectOption("dpc");
+  await page.getByLabel("DPČ režim").selectOption("standard");
+  await page.getByLabel("Zdravotní minimum").selectOption("prorated");
+  await page.getByLabel("Dny pro poměrné minimum").fill("12");
+  await page.getByLabel("Pracující starobní důchodce").check();
+
+  await expect(page.getByText("DPČ · zálohová daň")).toBeVisible();
+
+  await page.getByRole("button", { name: "Vrátit výchozí hodnoty" }).click();
+  await expect(page.getByLabel("Požadovaný čistý příjem")).toHaveValue("30000");
+  await expect(page.getByLabel("Expertní režim")).not.toBeChecked();
+  await expect(page.getByLabel("Přidat příspěvek na stravování")).not.toBeChecked();
+});
+
+test("desktop, tablet and phone layouts avoid horizontal overflow", async ({ page }) => {
+  const viewports = [
+    { width: 1440, height: 900 },
+    { width: 1024, height: 900 },
+    { width: 390, height: 844 },
+  ];
+
+  for (const viewport of viewports) {
+    await page.setViewportSize(viewport);
+    await page.goto("/");
+    await page.getByRole("button", { name: "Hrubá → čistá" }).click();
+    await page.getByLabel("Základní hrubá mzda").fill("9999999");
+    await page.getByLabel("Expertní režim").check();
+    await page.getByLabel("Přidat odměny a příplatky").check();
+
+    const hasHorizontalOverflow = await page.evaluate(
+      () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+    );
+
+    expect(hasHorizontalOverflow).toBe(false);
+    await expect(page.getByText("Náklady zaměstnavatele").first()).toBeVisible();
+    await expect(page.getByLabel("Exekuce / soudní srážky")).toBeVisible();
+  }
+});
