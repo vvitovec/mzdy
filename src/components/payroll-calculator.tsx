@@ -98,7 +98,6 @@ export function PayrollCalculator() {
   const employerInsurance = result.employerSocial + result.employerHealth;
   const primaryResult = input.calculation.mode === "netToGross" ? result.grossWage : result.netCash;
   const primaryLabel = input.calculation.mode === "netToGross" ? "Hrubá mzda celkem" : "Čistý příjem";
-  const hasUnsupportedWarnings = result.warnings.some((warning) => warning.severity === "unsupported");
   const hasIncomeExtras =
     input.income.rewardAmount > 0 ||
     input.income.personalBonusAmount > 0 ||
@@ -163,9 +162,9 @@ export function PayrollCalculator() {
           </div>
         </div>
         <div className="nav-links">
-          <span className={hasUnsupportedWarnings ? "credit-chip danger" : "credit-chip"}>
-            {hasUnsupportedWarnings ? "mimo model" : "pravidla 2026"}
-          </span>
+          <a className="credit-chip" href="https://vvitovec.com">
+            Další projekty
+          </a>
         </div>
       </nav>
 
