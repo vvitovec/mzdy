@@ -235,7 +235,6 @@ export function PayrollCalculator() {
       <section className="content">
         <header className="page-heading">
           <div>
-            <p className="eyebrow">Čistá · hrubá · náklady</p>
             <h1>Mzdová kalkulačka 2026</h1>
           </div>
           <p>Rychlý výpočet mzdy, odvodů a celkového nákladu pro běžnou práci mzdové účetní nebo zaměstnavatele.</p>
