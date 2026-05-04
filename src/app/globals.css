@@ -157,9 +157,24 @@ p {
 
 h1 {
   color: var(--easyflex-text);
-  font-size: clamp(31px, 3.2vw, 44px);
-  line-height: 1.08;
+  font-size: clamp(42px, 6.2vw, 88px);
+  font-weight: 900;
+  line-height: 0.94;
   margin-bottom: 0;
+  max-width: 760px;
+}
+
+.hero-title {
+  display: grid;
+  gap: 6px;
+}
+
+.hero-title span {
+  display: block;
+}
+
+.hero-title span:last-child {
+  color: var(--easyflex-blue);
 }
 
 h2 {
@@ -690,7 +705,7 @@ a:focus-visible {
   }
 
   h1 {
-    font-size: 31px;
+    font-size: 42px;
   }
 
   .input-pane,

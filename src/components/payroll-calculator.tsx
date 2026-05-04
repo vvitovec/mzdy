@@ -235,7 +235,10 @@ export function PayrollCalculator() {
       <section className="content">
         <header className="page-heading">
           <div>
-            <h1>Mzdová kalkulačka 2026</h1>
+            <h1 className="hero-title">
+              <span>Mzdová kalkulačka</span>
+              <span>2026</span>
+            </h1>
           </div>
         </header>
 
