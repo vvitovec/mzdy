@@ -207,6 +207,29 @@ describe("payroll 2026 production engine", () => {
     expect(result.taxBeforeDiscounts).toBe(expectedTax);
   });
 
+  it("rounds advance tax base up to whole korunas only when the base is up to 100 Kč", () => {
+    const result = gross(50, {
+      taxpayer: { signedDeclaration: false },
+      insurance: { healthMinimumMode: "exempt" },
+    });
+
+    expect(result.taxMode).toBe("advance");
+    expect(result.taxBase).toBe(50);
+    expect(result.taxBeforeDiscounts).toBe(8);
+  });
+
+  it("rounds withholding tax base and withholding tax down to whole korunas", () => {
+    const result = gross(101, {
+      employment: { type: "dpp" },
+      taxpayer: { signedDeclaration: false },
+      insurance: { healthMinimumMode: "exempt" },
+    });
+
+    expect(result.taxMode).toBe("withholding");
+    expect(result.taxBase).toBe(101);
+    expect(result.taxBeforeDiscounts).toBe(15);
+  });
+
   it("caps social insurance by the annual maximum assessment base", () => {
     const result = gross(100_000, {
       yearToDate: {

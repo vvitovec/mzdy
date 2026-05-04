@@ -298,10 +298,17 @@ export const PAYROLL_2026 = PAYROLL_RULES[2026];
 
 const roundKoruna = (value: number) => Math.round(value);
 const ceilKoruna = (value: number) => Math.ceil(value);
+const floorKoruna = (value: number) => Math.floor(value);
 const ceilHundreds = (value: number) => Math.ceil(value / 100) * 100;
 const clampNumber = (value: number, min = 0, max = Number.POSITIVE_INFINITY) =>
   Number.isFinite(value) ? Math.min(Math.max(value, min), max) : min;
 const hasAmount = (value: number) => Math.abs(value) > 0;
+
+function roundAdvanceTaxBase(value: number) {
+  if (value <= 0) return 0;
+  if (value <= 100) return ceilKoruna(value);
+  return ceilHundreds(value);
+}
 
 export function getPayrollRules(year: 2026 = 2026) {
   return PAYROLL_RULES[year];
@@ -632,12 +639,16 @@ export function calculateTax(
   const withholdingTax =
     !input.taxpayer.signedDeclaration &&
     ((input.employment.type === "dpp" && participation.thresholdIncome < rules.social.dppParticipationThreshold) ||
-      (input.employment.type !== "dpp" && participation.thresholdIncome < rules.social.smallEmploymentThreshold));
-  const taxBase = withholdingTax ? roundKoruna(taxableIncome) : ceilHundreds(taxableIncome);
-  const taxBeforeDiscounts = ceilKoruna(
-    Math.min(taxBase, rules.tax.highMonthlyThreshold) * rules.tax.standardRate +
-      Math.max(0, taxBase - rules.tax.highMonthlyThreshold) * rules.tax.highRate,
-  );
+      (input.employment.type === "dpc" &&
+        input.employment.dpcRegime === "smallScope" &&
+        participation.thresholdIncome < rules.social.smallEmploymentThreshold));
+  const taxBase = withholdingTax ? floorKoruna(taxableIncome) : roundAdvanceTaxBase(taxableIncome);
+  const taxBeforeDiscounts = withholdingTax
+    ? floorKoruna(taxBase * rules.tax.standardRate)
+    : ceilKoruna(
+        Math.min(taxBase, rules.tax.highMonthlyThreshold) * rules.tax.standardRate +
+          Math.max(0, taxBase - rules.tax.highMonthlyThreshold) * rules.tax.highRate,
+      );
   const discountsAllowed = input.taxpayer.signedDeclaration && !withholdingTax;
   const taxpayerDiscount = discountsAllowed ? rules.tax.taxpayerDiscount : 0;
   const disabilityDiscount =
