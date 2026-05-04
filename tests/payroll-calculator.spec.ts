@@ -35,10 +35,25 @@ test("large numbers and keyboard navigation keep the layout usable", async ({ pa
   await page.getByLabel("Základní hrubá mzda").fill("9999999");
   await page.getByLabel("Základní hrubá mzda").focus();
   await page.keyboard.press("Tab");
+  await expect(page.getByLabel("Hodiny pro sazbu")).toBeFocused();
+  await page.keyboard.press("Tab");
   await expect(page.getByLabel("Typ vztahu")).toBeFocused();
 
   await expect(page.getByText("Náklady zaměstnavatele").first()).toBeVisible();
   await expect(page.locator(".result-number")).toBeVisible();
+});
+
+test("hourly wage mode calculates gross wage from rate and hours", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Hrubá → čistá" }).click();
+  await page.getByRole("button", { name: "Hodinově" }).click();
+  await page.getByLabel("Hodinová sazba").fill("250");
+  await page.getByLabel("Odpracované hodiny").fill("160");
+
+  await expect(page.getByText(/Hrubý základ ze sazby: 40\s?000\s?Kč/)).toBeVisible();
+  await expect(page.getByText(/250,00\s?Kč\/h/).first()).toBeVisible();
+  await expect(page.getByText("Základní hrubá mzda z hodinové sazby (160 h)").first()).toBeVisible();
 });
 
 test("optional payroll inputs can be clicked through and reset", async ({ page }) => {

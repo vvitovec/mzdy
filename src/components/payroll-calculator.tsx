@@ -6,6 +6,7 @@ import {
   Calculator,
   ChevronDown,
   CircleHelp,
+  Clock3,
   Gift,
   Info,
   Plus,
@@ -19,6 +20,7 @@ import { useMemo, useState } from "react";
 import {
   calculatePayroll,
   createDefaultPayrollInput,
+  type BaseWageMode,
   type CalculationMode,
   type DisabilityDiscount,
   type DpcRegime,
@@ -49,6 +51,10 @@ const decimalCurrency = new Intl.NumberFormat("cs-CZ", {
   currency: "CZK",
 });
 
+const hours = new Intl.NumberFormat("cs-CZ", {
+  maximumFractionDigits: 2,
+});
+
 const employmentLabels: Record<EmploymentType, string> = {
   hpp: "HPP",
   dpp: "DPP",
@@ -71,6 +77,14 @@ const defaultInput = createDefaultPayrollInput();
 
 function formatAmount(value: number) {
   return currency.format(Math.round(value));
+}
+
+function formatHourlyRate(value: number) {
+  return `${decimalCurrency.format(value)}/h`;
+}
+
+function formatHours(value: number) {
+  return hours.format(value);
 }
 
 function Field({ label, suffix, compact, children }: FieldProps) {
@@ -96,8 +110,36 @@ export function PayrollCalculator() {
   const result = useMemo(() => calculatePayroll(input), [input]);
   const employeeDeductions = result.employeeSocial + result.employeeHealth + result.taxAfterDiscounts - result.taxBonus;
   const employerInsurance = result.employerSocial + result.employerHealth;
-  const primaryResult = input.calculation.mode === "netToGross" ? result.grossWage : result.netCash;
-  const primaryLabel = input.calculation.mode === "netToGross" ? "Hrubá mzda celkem" : "Čistý příjem";
+  const hourlyNetTarget = input.calculation.mode === "netToGross" && input.income.baseWageMode === "hourly";
+  const primaryResult = hourlyNetTarget ? result.hourlyRate : input.calculation.mode === "netToGross" ? result.grossWage : result.netCash;
+  const primaryLabel = hourlyNetTarget
+    ? "Hodinová sazba"
+    : input.calculation.mode === "netToGross"
+      ? "Hrubá mzda celkem"
+      : "Čistý příjem";
+  const primaryValue = hourlyNetTarget ? formatHourlyRate(primaryResult) : formatAmount(primaryResult);
+  const hourlyGrossInput = input.calculation.mode === "grossToNet" && input.income.baseWageMode === "hourly";
+  const amountFieldLabel = hourlyGrossInput
+    ? "Hodinová sazba"
+    : input.calculation.mode === "netToGross"
+      ? "Požadovaný čistý příjem"
+      : "Základní hrubá mzda";
+  const amountFieldValue = hourlyGrossInput ? input.income.hourlyRate : input.calculation.amount;
+  const amountFieldSuffix = hourlyGrossInput ? "Kč/h" : "Kč";
+  const wageNote =
+    input.income.baseWageMode === "hourly"
+      ? input.calculation.mode === "grossToNet"
+        ? `Hrubý základ ze sazby: ${formatAmount(result.baseGrossWage)} při ${formatHours(result.workedHours)} h.`
+        : `Dopočtená hrubá mzda: ${formatAmount(result.baseGrossWage)} při ${formatHours(result.workedHours)} h.`
+      : `Přepočtená hodinová sazba: ${formatHourlyRate(result.hourlyRate)} při ${formatHours(result.workedHours)} h.`;
+  const resultCopy =
+    input.calculation.mode === "netToGross"
+      ? input.income.baseWageMode === "hourly"
+        ? `Pro cílový čistý příjem ${formatAmount(input.calculation.amount)} vychází sazba ${formatHourlyRate(result.hourlyRate)} a základní hrubá mzda ${formatAmount(result.baseGrossWage)}.`
+        : `Základní hrubá mzda ${formatAmount(result.baseGrossWage)} vychází na ${formatHourlyRate(result.hourlyRate)} při ${formatHours(result.workedHours)} h; čistý výsledek ${formatAmount(result.netCash)}.`
+      : input.income.baseWageMode === "hourly"
+        ? `Hodinová sazba ${formatHourlyRate(result.hourlyRate)} při ${formatHours(result.workedHours)} h dává základní hrubou mzdu ${formatAmount(result.baseGrossWage)} a čistý příjem ${formatAmount(result.netCash)}.`
+        : `Zadaná základní hrubá mzda ${formatAmount(result.baseGrossWage)} vychází na ${formatHourlyRate(result.hourlyRate)} při ${formatHours(result.workedHours)} h a dává čistý příjem ${formatAmount(result.netCash)}.`;
   const hasIncomeExtras =
     input.income.rewardAmount > 0 ||
     input.income.personalBonusAmount > 0 ||
@@ -122,6 +164,28 @@ export function PayrollCalculator() {
 
   const updateIncome = (patch: Partial<PayrollInput["income"]>) => {
     setInput((current) => ({ ...current, income: { ...current.income, ...patch } }));
+  };
+
+  const updateBaseWageMode = (baseWageMode: BaseWageMode) => {
+    setInput((current) => {
+      const workedHours = clampInputNumber(current.income.workedHours);
+      const currentBaseGrossWage =
+        current.income.baseWageMode === "hourly" ? Math.round(current.income.hourlyRate * workedHours) : current.calculation.amount;
+      const nextIncome = {
+        ...current.income,
+        baseWageMode,
+        hourlyRate:
+          baseWageMode === "hourly" && current.calculation.mode === "grossToNet" && workedHours > 0
+            ? currentBaseGrossWage / workedHours
+            : current.income.hourlyRate || PAYROLL_2026.labor.minimumHourlyWage,
+      };
+      const nextCalculation =
+        baseWageMode === "monthly" && current.calculation.mode === "grossToNet"
+          ? { ...current.calculation, amount: currentBaseGrossWage }
+          : current.calculation;
+
+      return { ...current, calculation: nextCalculation, income: nextIncome };
+    });
   };
 
   const updateMealAllowance = (patch: Partial<PayrollInput["benefits"]["mealAllowance"]>) => {
@@ -174,6 +238,7 @@ export function PayrollCalculator() {
             <p className="eyebrow">Čistá · hrubá · náklady</p>
             <h1>Mzdová kalkulačka 2026</h1>
           </div>
+          <p>Rychlý výpočet mzdy, odvodů a celkového nákladu pro běžnou práci mzdové účetní nebo zaměstnavatele.</p>
         </header>
 
         <div className="calculator-shell">
@@ -201,19 +266,51 @@ export function PayrollCalculator() {
               ))}
             </div>
 
+            <div className="segmented" aria-label="Základ mzdy">
+              {(["monthly", "hourly"] as BaseWageMode[]).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  className={input.income.baseWageMode === mode ? "active" : ""}
+                  onClick={() => updateBaseWageMode(mode)}
+                >
+                  {mode === "monthly" ? "Měsíčně" : "Hodinově"}
+                </button>
+              ))}
+            </div>
+
             <div className="form-stack">
-              <Field
-                label={input.calculation.mode === "netToGross" ? "Požadovaný čistý příjem" : "Základní hrubá mzda"}
-                suffix="Kč"
-              >
-                <input
-                  value={input.calculation.amount}
-                  min={0}
-                  type="number"
-                  inputMode="numeric"
-                  onChange={(event) => updateCalculation({ amount: clampInputNumber(Number(event.target.value)) })}
-                />
-              </Field>
+              <div className="field-grid">
+                <Field label={amountFieldLabel} suffix={amountFieldSuffix}>
+                  <input
+                    value={amountFieldValue}
+                    min={0}
+                    step={hourlyGrossInput ? "0.01" : "1"}
+                    type="number"
+                    inputMode="decimal"
+                    onChange={(event) => {
+                      const value = clampInputNumber(Number(event.target.value));
+
+                      if (hourlyGrossInput) {
+                        updateIncome({ hourlyRate: value });
+                      } else {
+                        updateCalculation({ amount: value });
+                      }
+                    }}
+                  />
+                </Field>
+                <Field label={input.income.baseWageMode === "hourly" ? "Odpracované hodiny" : "Hodiny pro sazbu"} suffix="h">
+                  <input
+                    value={input.income.workedHours}
+                    min={0}
+                    step="0.5"
+                    type="number"
+                    inputMode="decimal"
+                    onChange={(event) => updateIncome({ workedHours: clampInputNumber(Number(event.target.value)) })}
+                  />
+                </Field>
+              </div>
+              <p className="inline-note">{wageNote}</p>
 
               <div className="field-grid">
                 <label className="field">
@@ -319,7 +416,7 @@ export function PayrollCalculator() {
                     });
                   } else {
                     setExtrasOpen(true);
-                    updateIncome({ averageHourlyWage: input.income.averageHourlyWage || PAYROLL_2026.labor.minimumMonthlyWage / 168 });
+                    updateIncome({ averageHourlyWage: input.income.averageHourlyWage || result.hourlyRate || PAYROLL_2026.labor.minimumMonthlyWage / 168 });
                   }
                 }}
               >
@@ -594,12 +691,8 @@ export function PayrollCalculator() {
               </span>
             </div>
 
-            <div className="result-number">{formatAmount(primaryResult)}</div>
-            <p className="result-copy">
-              {input.calculation.mode === "netToGross"
-                ? `Základní hrubá mzda ${formatAmount(result.baseGrossWage)}, čistý výsledek ${formatAmount(result.netCash)}.`
-                : `Zadaná základní hrubá mzda ${formatAmount(result.baseGrossWage)} dává čistý příjem ${formatAmount(result.netCash)}.`}
-            </p>
+            <div className="result-number">{primaryValue}</div>
+            <p className="result-copy">{resultCopy}</p>
 
             {input.calculation.mode === "netToGross" ? (
               <p className={result.accuracy.solverStatus === "exact" ? "accuracy-note exact" : "accuracy-note"}>
@@ -623,6 +716,12 @@ export function PayrollCalculator() {
             <div className="summary-list">
               <SummaryRow icon={<WalletCards size={18} />} label="Čistá mzda" value={result.netWage} strong />
               <SummaryRow icon={<Plus size={18} />} label="Hrubá mzda celkem" value={result.grossWage} />
+              <SummaryRow
+                icon={<Clock3 size={18} />}
+                label="Hodinová sazba"
+                value={result.hourlyRate}
+                displayValue={formatHourlyRate(result.hourlyRate)}
+              />
               {result.cashExtras > 0 ? <SummaryRow icon={<Gift size={18} />} label="Odměny a příplatky" value={result.cashExtras} /> : null}
               <SummaryRow
                 icon={<ReceiptText size={18} />}
@@ -679,7 +778,8 @@ export function PayrollCalculator() {
               <h3>Počítá</h3>
               <p>
                 HPP, DPP a DPČ, zálohovou i srážkovou daň, sociální a zdravotní pojistné, zdravotní minimum,
-                roční sociální maximum, základní slevy, děti včetně ZTP/P a příspěvek na stravování.
+                roční sociální maximum, hodinovou sazbu z odpracovaných hodin, základní slevy, děti včetně ZTP/P
+                a příspěvek na stravování.
               </p>
             </div>
             <div>
@@ -735,18 +835,20 @@ function SummaryRow({
   icon,
   label,
   value,
+  displayValue,
   strong,
 }: {
   icon: React.ReactNode;
   label: string;
   value: number;
+  displayValue?: string;
   strong?: boolean;
 }) {
   return (
     <div className={strong ? "summary-row strong" : "summary-row"}>
       <span className="summary-icon">{icon}</span>
       <span>{label}</span>
-      <strong>{formatAmount(value)}</strong>
+      <strong>{displayValue ?? formatAmount(value)}</strong>
     </div>
   );
 }

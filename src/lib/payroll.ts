@@ -1,5 +1,6 @@
 export type EmploymentType = "hpp" | "dpp" | "dpc";
 export type CalculationMode = "netToGross" | "grossToNet";
+export type BaseWageMode = "monthly" | "hourly";
 export type DpcRegime = "standard" | "smallScope";
 export type EmployerSocialProfile = "standard" | "risky" | "rescue";
 export type HealthMinimumMode = "full" | "prorated" | "exempt";
@@ -78,6 +79,9 @@ export type PayrollInput = {
     isForeignTaxResident: boolean;
   };
   income: {
+    baseWageMode: BaseWageMode;
+    workedHours: number;
+    hourlyRate: number;
     rewardAmount: number;
     personalBonusAmount: number;
     otherTaxableIncomeAmount: number;
@@ -144,7 +148,10 @@ export type PayrollAccuracy = {
 
 export type PayrollResult = {
   requestedAmount: number;
+  baseWageMode: BaseWageMode;
   baseGrossWage: number;
+  workedHours: number;
+  hourlyRate: number;
   grossWage: number;
   rewardAmount: number;
   personalBonusAmount: number;
@@ -341,6 +348,9 @@ export function createDefaultPayrollInput(overrides: DeepPartial<PayrollInput> =
       isForeignTaxResident: false,
     },
     income: {
+      baseWageMode: "monthly",
+      workedHours: 168,
+      hourlyRate: rules.labor.minimumHourlyWage,
       rewardAmount: 0,
       personalBonusAmount: 0,
       otherTaxableIncomeAmount: 0,
@@ -392,6 +402,7 @@ function normalizeInput(input: PayrollInput): PayrollInput {
   const childrenCount = Math.floor(clampNumber(normalized.taxpayer.childrenCount));
   const ztpPChildrenCount = Math.floor(clampNumber(normalized.taxpayer.ztpPChildrenCount, 0, childrenCount));
   const daysInMonth = Math.max(1, Math.floor(clampNumber(normalized.insurance.daysInMonth, 1, 31)));
+  const baseWageMode = normalized.income.baseWageMode === "hourly" ? "hourly" : "monthly";
 
   return {
     ...normalized,
@@ -409,6 +420,9 @@ function normalizeInput(input: PayrollInput): PayrollInput {
       ztpPChildrenCount,
     },
     income: {
+      baseWageMode,
+      workedHours: clampNumber(normalized.income.workedHours),
+      hourlyRate: clampNumber(normalized.income.hourlyRate),
       rewardAmount: roundKoruna(clampNumber(normalized.income.rewardAmount)),
       personalBonusAmount: roundKoruna(clampNumber(normalized.income.personalBonusAmount)),
       otherTaxableIncomeAmount: roundKoruna(clampNumber(normalized.income.otherTaxableIncomeAmount)),
@@ -683,7 +697,11 @@ export function calculateTax(
   };
 }
 
-function buildWarnings(input: PayrollInput, result: Pick<PayrollResult, "taxableIncome" | "socialAssessmentBase">) {
+function buildWarnings(
+  input: PayrollInput,
+  result: Pick<PayrollResult, "baseGrossWage" | "taxableIncome" | "socialAssessmentBase">,
+  rules: PayrollRules,
+) {
   const warnings: PayrollWarning[] = [];
 
   if (input.taxpayer.hasExecution) {
@@ -743,6 +761,16 @@ function buildWarnings(input: PayrollInput, result: Pick<PayrollResult, "taxable
     });
   }
 
+  const hourlyRate = deriveHourlyRate(result.baseGrossWage, input.income.workedHours);
+
+  if (hourlyRate > 0 && hourlyRate < rules.labor.minimumHourlyWage) {
+    warnings.push({
+      code: "hourly-rate-below-minimum",
+      severity: "warning",
+      message: `Dopočtená hodinová sazba je pod minimální hodinovou mzdou ${rules.labor.minimumHourlyWage} Kč/h.`,
+    });
+  }
+
   return warnings;
 }
 
@@ -750,6 +778,7 @@ function buildAssumptions(input: PayrollInput, rules: PayrollRules): PayrollAssu
   const assumptions: PayrollAssumption[] = [
     { label: "Rok pravidel", value: String(rules.year) },
     { label: "Zaokrouhlování", value: "Daň a pojistné jsou zaokrouhlovány na celé Kč nahoru podle typu odvodu." },
+    { label: "Hodinová sazba", value: `Přepočet používá ${input.income.workedHours} odpracovaných hodin.` },
     { label: "Stravenkový paušál", value: "Osvobození se počítá jen pro směny bez nároku na cestovní stravné." },
   ];
 
@@ -767,10 +796,27 @@ function makeLine(label: string, amount: number, tone?: PayrollLine["tone"], kin
   return { label, amount, tone, kind };
 }
 
+function deriveBaseGrossWage(input: PayrollInput, context: PayrollCalculationContext) {
+  if (typeof context.baseGrossWage === "number") {
+    return roundKoruna(clampNumber(context.baseGrossWage));
+  }
+
+  if (input.income.baseWageMode === "hourly") {
+    return roundKoruna(input.income.hourlyRate * input.income.workedHours);
+  }
+
+  return roundKoruna(clampNumber(input.calculation.amount));
+}
+
+function deriveHourlyRate(baseGrossWage: number, workedHours: number) {
+  return workedHours > 0 ? baseGrossWage / workedHours : 0;
+}
+
 export function grossToNet(input: PayrollInput, context: PayrollCalculationContext = {}): PayrollResult {
   const rules = context.rules ?? getPayrollRules();
   const normalized = normalizeInput(input);
-  const baseGrossWage = roundKoruna(clampNumber(context.baseGrossWage ?? normalized.calculation.amount));
+  const baseGrossWage = deriveBaseGrossWage(normalized, context);
+  const hourlyRate = deriveHourlyRate(baseGrossWage, normalized.income.workedHours);
   const supplements = calculateSupplements(normalized);
   const rewardAmount = normalized.income.rewardAmount;
   const personalBonusAmount = normalized.income.personalBonusAmount;
@@ -791,7 +837,11 @@ export function grossToNet(input: PayrollInput, context: PayrollCalculationConte
     tax.taxBonus;
   const netCash = netWage + (normalized.benefits.mealAllowance.includeInNet ? meal.mealAllowanceTotal : 0);
   const employerCost = grossWage + meal.mealAllowanceTotal + social.employerSocial + health.employerHealth;
-  const warnings = buildWarnings(normalized, { taxableIncome, socialAssessmentBase: social.socialAssessmentBase });
+  const warnings = buildWarnings(
+    normalized,
+    { baseGrossWage, taxableIncome, socialAssessmentBase: social.socialAssessmentBase },
+    rules,
+  );
 
   if (meal.warning) warnings.push(meal.warning);
 
@@ -840,8 +890,13 @@ export function grossToNet(input: PayrollInput, context: PayrollCalculationConte
     });
   }
 
+  const baseGrossWageLabel =
+    normalized.income.baseWageMode === "hourly"
+      ? `Základní hrubá mzda z hodinové sazby (${normalized.income.workedHours} h)`
+      : "Základní hrubá mzda";
   const lines: PayrollLine[] = [
-    makeLine("Základní hrubá mzda", baseGrossWage, "strong", "income"),
+    ...(normalized.income.workedHours > 0 ? [makeLine("Hodinová sazba", hourlyRate, "normal", "income")] : []),
+    makeLine(baseGrossWageLabel, baseGrossWage, "strong", "income"),
     ...(hasAmount(rewardAmount) ? [makeLine("Odměna / prémie", rewardAmount, "positive", "income")] : []),
     ...(hasAmount(personalBonusAmount)
       ? [makeLine("Osobní ohodnocení", personalBonusAmount, "positive", "income")]
@@ -904,7 +959,10 @@ export function grossToNet(input: PayrollInput, context: PayrollCalculationConte
 
   return {
     requestedAmount: targetAmount,
+    baseWageMode: normalized.income.baseWageMode,
     baseGrossWage,
+    workedHours: normalized.income.workedHours,
+    hourlyRate,
     grossWage,
     rewardAmount,
     personalBonusAmount,
@@ -1011,8 +1069,10 @@ export function calculatePayroll(input: PayrollInput): PayrollResult {
   const normalized = normalizeInput(input);
 
   if (normalized.calculation.mode === "grossToNet") {
+    const requestedAmount = deriveBaseGrossWage(normalized, {});
+
     return grossToNet(normalized, {
-      requestedAmount: normalized.calculation.amount,
+      requestedAmount,
       solverStatus: "not-run",
     });
   }

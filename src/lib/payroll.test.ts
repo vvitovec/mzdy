@@ -172,6 +172,48 @@ describe("payroll 2026 production engine", () => {
     expect(result.warnings.some((warning) => warning.code === "meal-travel-entitlement")).toBe(true);
   });
 
+  it("calculates a gross wage from hourly rate and worked hours", () => {
+    const result = gross(0, {
+      income: {
+        baseWageMode: "hourly",
+        hourlyRate: 250,
+        workedHours: 160,
+      },
+    });
+
+    expect(result.baseWageMode).toBe("hourly");
+    expect(result.baseGrossWage).toBe(40_000);
+    expect(result.hourlyRate).toBe(250);
+    expect(result.grossWage).toBe(40_000);
+  });
+
+  it("computes hourly rate from monthly gross wage and hours", () => {
+    const result = gross(33_600, {
+      income: {
+        workedHours: 168,
+      },
+    });
+
+    expect(result.baseWageMode).toBe("monthly");
+    expect(result.hourlyRate).toBe(200);
+  });
+
+  it("reverses target net into an hourly rate when hourly mode is selected", () => {
+    const result = calculatePayroll(
+      input({
+        calculation: { mode: "netToGross", amount: 30_000 },
+        income: {
+          baseWageMode: "hourly",
+          workedHours: 160,
+        },
+      }),
+    );
+
+    expect(Math.abs(result.netCash - 30_000)).toBeLessThanOrEqual(1);
+    expect(result.hourlyRate).toBeCloseTo(result.baseGrossWage / 160, 5);
+    expect(result.hourlyRate).toBeGreaterThan(PAYROLL_2026.labor.minimumHourlyWage);
+  });
+
   it("adds rewards and common pay supplements to gross wage and employer cost", () => {
     const result = gross(40_000, {
       income: {
