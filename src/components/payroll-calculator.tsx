@@ -684,9 +684,6 @@ export function PayrollCalculator() {
                 <p className="eyebrow">{input.calculation.mode === "netToGross" ? "Dopočtený výsledek" : "Čistý výstup"}</p>
                 <h2>{primaryLabel}</h2>
               </div>
-              <span className={result.insuranceApplies ? "status-pill success" : "status-pill"}>
-                {result.insuranceApplies ? "pojistné se odvádí" : "bez pojistného"}
-              </span>
             </div>
 
             <div className="result-number">{primaryValue}</div>
@@ -719,6 +716,12 @@ export function PayrollCalculator() {
                 label="Hodinová sazba"
                 value={result.hourlyRate}
                 displayValue={formatHourlyRate(result.hourlyRate)}
+              />
+              <SummaryRow
+                icon={<ShieldCheck size={18} />}
+                label="Pojistné"
+                value={0}
+                displayValue={result.insuranceApplies ? "Ano" : "Ne"}
               />
               {result.cashExtras > 0 ? <SummaryRow icon={<Gift size={18} />} label="Odměny a příplatky" value={result.cashExtras} /> : null}
               <SummaryRow

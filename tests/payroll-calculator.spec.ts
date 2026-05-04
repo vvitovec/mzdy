@@ -23,7 +23,7 @@ test("expert mode exposes edge cases and unsupported warnings", async ({ page })
   await page.getByLabel("Základní hrubá mzda").fill("11999");
   await page.getByLabel("Exekuce / soudní srážky").check();
 
-  await expect(page.getByText("bez pojistného")).toBeVisible();
+  await expect(page.locator(".summary-row").filter({ hasText: "Pojistné" }).getByText("Ne")).toBeVisible();
   await expect(page.getByText("Srážková daň").first()).toBeVisible();
   await expect(page.getByText(/Exekuce a soudní srážky nejsou ve v1 počítané/)).toBeVisible();
 });
