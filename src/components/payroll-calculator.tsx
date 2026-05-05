@@ -74,6 +74,7 @@ const healthMinimumLabels: Record<HealthMinimumMode, string> = {
 };
 
 const defaultInput = createDefaultPayrollInput();
+const defaultNetToGrossAmount = 30_000;
 const defaultGrossToNetAmount = 33_600;
 
 function formatAmount(value: number) {
@@ -166,7 +167,7 @@ export function PayrollCalculator() {
         calculation: {
           ...current.calculation,
           mode,
-          amount: mode === "grossToNet" ? defaultGrossToNetAmount : current.calculation.amount,
+          amount: mode === "grossToNet" ? defaultGrossToNetAmount : defaultNetToGrossAmount,
         },
       };
     });
