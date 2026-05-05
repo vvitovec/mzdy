@@ -693,6 +693,7 @@ a:focus-visible {
 
   h1 {
     font-size: clamp(28px, 9.2vw, 42px);
+    white-space: normal;
   }
 
   .input-pane,

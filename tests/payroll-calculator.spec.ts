@@ -5,6 +5,7 @@ test("basic salary flow shows a sourced result", async ({ page }) => {
 
   await expect(page.getByRole("heading", { name: "Mzdová kalkulačka 2026" })).toBeVisible();
   await page.getByRole("button", { name: "Hrubá → čistá" }).click();
+  await expect(page.getByLabel("Základní hrubá mzda")).toHaveValue("33600");
   await page.getByLabel("Základní hrubá mzda").fill("45000");
   await page.getByLabel("Počet dětí").fill("2");
 

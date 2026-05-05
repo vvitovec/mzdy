@@ -74,6 +74,7 @@ const healthMinimumLabels: Record<HealthMinimumMode, string> = {
 };
 
 const defaultInput = createDefaultPayrollInput();
+const defaultGrossToNetAmount = 33_600;
 
 function formatAmount(value: number) {
   return currency.format(Math.round(value));
@@ -152,6 +153,23 @@ export function PayrollCalculator() {
 
   const updateCalculation = (patch: Partial<PayrollInput["calculation"]>) => {
     setInput((current) => ({ ...current, calculation: { ...current.calculation, ...patch } }));
+  };
+
+  const updateCalculationMode = (mode: CalculationMode) => {
+    setInput((current) => {
+      if (current.calculation.mode === mode) {
+        return current;
+      }
+
+      return {
+        ...current,
+        calculation: {
+          ...current.calculation,
+          mode,
+          amount: mode === "grossToNet" ? defaultGrossToNetAmount : current.calculation.amount,
+        },
+      };
+    });
   };
 
   const updateEmployment = (patch: Partial<PayrollInput["employment"]>) => {
@@ -257,7 +275,7 @@ export function PayrollCalculator() {
                   key={mode}
                   type="button"
                   className={input.calculation.mode === mode ? "active" : ""}
-                  onClick={() => updateCalculation({ mode })}
+                  onClick={() => updateCalculationMode(mode)}
                 >
                   {mode === "netToGross" ? "Čistá → hrubá" : "Hrubá → čistá"}
                 </button>
