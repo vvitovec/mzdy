@@ -350,6 +350,22 @@ a:focus-visible {
   width: 36px;
 }
 
+.pdf-button {
+  align-items: center;
+  background: var(--easyflex-blue);
+  border: 1px solid var(--easyflex-blue);
+  border-radius: 6px;
+  color: var(--easyflex-surface);
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-size: 14px;
+  font-weight: 800;
+  gap: 8px;
+  min-height: 36px;
+  padding: 7px 12px;
+  white-space: nowrap;
+}
+
 .optional-section {
   border-top: 1px solid var(--easyflex-panel-border);
   padding-top: 14px;

@@ -18,6 +18,21 @@ test("basic salary flow shows a sourced result", async ({ page }) => {
   await expect(page.getByRole("link", { name: /MPSV: minimální mzda 2026/ })).toBeVisible();
 });
 
+test("pdf export is available from both calculation modes", async ({ page }) => {
+  await page.goto("/");
+
+  await expect(page.getByRole("button", { name: "Export PDF" })).toBeVisible();
+
+  await page.evaluate(() => {
+    window.print = () => undefined;
+  });
+  await page.getByRole("button", { name: "Export PDF" }).click();
+
+  await page.getByRole("button", { name: "Hrubá → čistá" }).click();
+  await page.getByLabel("Základní hrubá mzda").fill("45000");
+  await expect(page.getByRole("button", { name: "Export PDF" })).toBeVisible();
+});
+
 test("expert mode exposes edge cases and unsupported warnings", async ({ page }) => {
   await page.goto("/");
 

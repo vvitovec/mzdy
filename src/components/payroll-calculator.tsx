@@ -7,6 +7,7 @@ import {
   ChevronDown,
   CircleHelp,
   Clock3,
+  Download,
   Gift,
   Info,
   Plus,
@@ -28,6 +29,7 @@ import {
   type EmploymentType,
   type HealthMinimumMode,
   type PayrollInput,
+  type PayrollResult,
   PAYROLL_2026,
 } from "@/lib/payroll";
 
@@ -73,6 +75,16 @@ const healthMinimumLabels: Record<HealthMinimumMode, string> = {
   exempt: "Bez minima",
 };
 
+const baseWageModeLabels: Record<BaseWageMode, string> = {
+  monthly: "Měsíční",
+  hourly: "Hodinový",
+};
+
+const calculationModeLabels: Record<CalculationMode, string> = {
+  netToGross: "Čistá na hrubou",
+  grossToNet: "Hrubá na čistou",
+};
+
 const defaultInput = createDefaultPayrollInput();
 const defaultNetToGrossAmount = 30_000;
 const defaultGrossToNetAmount = 33_600;
@@ -89,6 +101,14 @@ function formatHours(value: number) {
   return hours.format(value);
 }
 
+function formatSignedAmount(value: number) {
+  return value < 0 ? `-${formatAmount(Math.abs(value))}` : formatAmount(value);
+}
+
+function formatBoolean(value: boolean) {
+  return value ? "Ano" : "Ne";
+}
+
 function Field({ label, suffix, compact, children }: FieldProps) {
   return (
     <label className={compact ? "field compact" : "field"}>
@@ -103,6 +123,268 @@ function Field({ label, suffix, compact, children }: FieldProps) {
 
 function clampInputNumber(value: number, min = 0) {
   return Number.isFinite(value) ? Math.max(min, value) : min;
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function renderPdfRows(rows: Array<[string, string | number | null | undefined]>) {
+  return rows
+    .filter(([, value]) => value !== null && value !== undefined && value !== "")
+    .map(
+      ([label, value]) =>
+        `<tr><th>${escapeHtml(label)}</th><td>${escapeHtml(String(value))}</td></tr>`,
+    )
+    .join("");
+}
+
+function renderPdfBreakdown(result: PayrollResult) {
+  return result.lines
+    .map(
+      (row) =>
+        `<tr><th>${escapeHtml(row.label)}</th><td>${escapeHtml(formatSignedAmount(row.amount))}</td></tr>`,
+    )
+    .join("");
+}
+
+function buildPayrollPdfHtml(input: PayrollInput, result: PayrollResult) {
+  const amountLabel =
+    input.calculation.mode === "netToGross"
+      ? "Požadovaný čistý příjem"
+      : input.income.baseWageMode === "hourly"
+        ? "Zadaná hodinová sazba"
+        : "Zadaná základní hrubá mzda";
+  const amountValue =
+    input.calculation.mode === "grossToNet" && input.income.baseWageMode === "hourly"
+      ? formatHourlyRate(input.income.hourlyRate)
+      : formatAmount(input.calculation.amount);
+  const employeeDeductions = result.employeeSocial + result.employeeHealth + result.taxAfterDiscounts - result.taxBonus;
+  const employerInsurance = result.employerSocial + result.employerHealth;
+  const mealAllowanceRows: Array<[string, string | number | null]> = input.benefits.mealAllowance.enabled
+    ? [
+        ["Příspěvek na stravování", formatAmount(result.mealAllowanceTotal)],
+        ["Osvobozená část příspěvku", formatAmount(result.exemptMealAllowance)],
+        ["Zdanitelná část příspěvku", formatAmount(result.taxableMealAllowance)],
+      ]
+    : [];
+  const extrasRows: Array<[string, string | number | null]> = [
+    ["Odměna / prémie", result.rewardAmount > 0 ? formatAmount(result.rewardAmount) : null],
+    ["Osobní ohodnocení", result.personalBonusAmount > 0 ? formatAmount(result.personalBonusAmount) : null],
+    ["Jiný zdanitelný příjem", result.otherTaxableIncomeAmount > 0 ? formatAmount(result.otherTaxableIncomeAmount) : null],
+    ["Příplatky celkem", result.supplementsTotal > 0 ? formatAmount(result.supplementsTotal) : null],
+  ];
+  const warningList = result.warnings
+    .map((warning) => `<li>${escapeHtml(warning.message)}</li>`)
+    .join("");
+
+  return `<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8" />
+  <title>Mzdový výpočet 2026</title>
+  <style>
+    @page { margin: 16mm; }
+    * { box-sizing: border-box; }
+    body {
+      color: #172033;
+      font-family: Arial, sans-serif;
+      font-size: 12px;
+      line-height: 1.35;
+      margin: 0;
+    }
+    header {
+      border-bottom: 1px solid #cdd5df;
+      display: flex;
+      justify-content: space-between;
+      gap: 24px;
+      padding-bottom: 14px;
+    }
+    h1 {
+      font-size: 25px;
+      line-height: 1.1;
+      margin: 0;
+    }
+    h2 {
+      font-size: 13px;
+      margin: 0 0 8px;
+      text-transform: uppercase;
+    }
+    .meta {
+      color: #596579;
+      text-align: right;
+      white-space: nowrap;
+    }
+    .total {
+      align-items: end;
+      display: grid;
+      gap: 4px;
+      justify-items: end;
+    }
+    .total span {
+      color: #596579;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .total strong {
+      color: #104f9a;
+      font-size: 26px;
+      line-height: 1;
+    }
+    main {
+      display: grid;
+      gap: 18px;
+      padding-top: 18px;
+    }
+    .grid {
+      display: grid;
+      gap: 18px;
+      grid-template-columns: 1fr 1fr;
+    }
+    section {
+      break-inside: avoid;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+    }
+    th,
+    td {
+      border-bottom: 1px solid #dce2ea;
+      padding: 7px 0;
+      vertical-align: top;
+    }
+    th {
+      color: #596579;
+      font-weight: 700;
+      padding-right: 16px;
+      text-align: left;
+      width: 58%;
+    }
+    td {
+      font-weight: 700;
+      text-align: right;
+    }
+    ul {
+      margin: 0;
+      padding-left: 18px;
+    }
+    li {
+      margin: 0 0 5px;
+    }
+    @media print {
+      body { print-color-adjust: exact; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Mzdový výpočet 2026</h1>
+      <div class="meta">${escapeHtml(calculationModeLabels[input.calculation.mode])} · ${escapeHtml(employmentLabels[input.employment.type])}</div>
+    </div>
+    <div class="total">
+      <span>Čistý příjem</span>
+      <strong>${escapeHtml(formatAmount(result.netCash))}</strong>
+    </div>
+  </header>
+  <main>
+    <div class="grid">
+      <section>
+        <h2>Vstup</h2>
+        <table><tbody>${renderPdfRows([
+          ["Režim výpočtu", calculationModeLabels[input.calculation.mode]],
+          [amountLabel, amountValue],
+          ["Základ mzdy", baseWageModeLabels[input.income.baseWageMode]],
+          ["Odpracované hodiny", `${formatHours(result.workedHours)} h`],
+          ["Typ vztahu", employmentLabels[input.employment.type]],
+          ["Prohlášení poplatníka", formatBoolean(input.taxpayer.signedDeclaration)],
+          ["Počet dětí", input.taxpayer.childrenCount],
+          ["Zdravotní minimum", healthMinimumLabels[input.insurance.healthMinimumMode]],
+        ])}</tbody></table>
+      </section>
+      <section>
+        <h2>Výsledek</h2>
+        <table><tbody>${renderPdfRows([
+          ["Základní hrubá mzda", formatAmount(result.baseGrossWage)],
+          ["Hrubá mzda celkem", formatAmount(result.grossWage)],
+          ["Hodinová sazba", formatHourlyRate(result.hourlyRate)],
+          ["Čistá mzda", formatAmount(result.netWage)],
+          ["Čistý příjem", formatAmount(result.netCash)],
+          ["Náklady zaměstnavatele", formatAmount(result.employerCost)],
+        ])}</tbody></table>
+      </section>
+    </div>
+    <div class="grid">
+      <section>
+        <h2>Odvody</h2>
+        <table><tbody>${renderPdfRows([
+          ["Sociální pojištění zaměstnanec", formatAmount(result.employeeSocial)],
+          ["Zdravotní pojištění zaměstnanec", formatAmount(result.employeeHealth)],
+          [result.taxMode === "withholding" ? "Srážková daň" : "Daň po slevách", formatAmount(result.taxAfterDiscounts)],
+          ["Daňový bonus", formatAmount(result.taxBonus)],
+          ["Srážky zaměstnance", formatAmount(employeeDeductions)],
+          ["Odvody zaměstnavatele", formatAmount(employerInsurance)],
+        ])}</tbody></table>
+      </section>
+      <section>
+        <h2>Další položky</h2>
+        <table><tbody>${renderPdfRows([
+          ...extrasRows,
+          ...mealAllowanceRows,
+          ["Pojistné", result.insuranceApplies ? "Ano" : "Ne"],
+        ])}</tbody></table>
+      </section>
+    </div>
+    <section>
+      <h2>Rozpad výpočtu</h2>
+      <table><tbody>${renderPdfBreakdown(result)}</tbody></table>
+    </section>
+    ${
+      warningList
+        ? `<section><h2>Upozornění</h2><ul>${warningList}</ul></section>`
+        : ""
+    }
+  </main>
+</body>
+</html>`;
+}
+
+function exportPayrollPdf(input: PayrollInput, result: PayrollResult) {
+  const frame = document.createElement("iframe");
+  frame.setAttribute("title", "Mzdový výpočet PDF");
+  frame.style.border = "0";
+  frame.style.height = "0";
+  frame.style.position = "fixed";
+  frame.style.right = "0";
+  frame.style.bottom = "0";
+  frame.style.width = "0";
+
+  document.body.appendChild(frame);
+
+  const frameWindow = frame.contentWindow;
+  const frameDocument = frameWindow?.document;
+
+  if (!frameWindow || !frameDocument) {
+    frame.remove();
+    return;
+  }
+
+  frameDocument.open();
+  frameDocument.write(buildPayrollPdfHtml(input, result));
+  frameDocument.close();
+
+  window.setTimeout(() => {
+    frameWindow.focus();
+    frameWindow.print();
+    window.setTimeout(() => frame.remove(), 600);
+  }, 100);
 }
 
 export function PayrollCalculator() {
@@ -703,6 +985,10 @@ export function PayrollCalculator() {
                 <p className="eyebrow">{input.calculation.mode === "netToGross" ? "Dopočtený výsledek" : "Čistý výstup"}</p>
                 <h2>{primaryLabel}</h2>
               </div>
+              <button className="pdf-button" type="button" onClick={() => exportPayrollPdf(input, result)}>
+                <Download size={17} aria-hidden="true" />
+                Export PDF
+              </button>
             </div>
 
             <div className="result-number">{primaryValue}</div>
@@ -777,7 +1063,7 @@ export function PayrollCalculator() {
                 {result.lines.map((row) => (
                   <div key={`${row.label}-${row.amount}`} className={row.tone ? `breakdown-row row-${row.tone}` : "breakdown-row"}>
                     <span>{row.label}</span>
-                    <strong>{row.amount < 0 ? `-${formatAmount(Math.abs(row.amount))}` : formatAmount(row.amount)}</strong>
+                    <strong>{formatSignedAmount(row.amount)}</strong>
                   </div>
                 ))}
               </div>
