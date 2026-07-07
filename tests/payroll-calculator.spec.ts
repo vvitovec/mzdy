@@ -82,7 +82,8 @@ test("optional payroll inputs can be clicked through and reset", async ({ page }
   await page.getByRole("button", { name: "Hrubá → čistá" }).click();
   await page.getByLabel("Základní hrubá mzda").fill("52000");
   await page.getByLabel("Přidat příspěvek na stravování").check();
-  await page.getByLabel("Příspěvek za směnu").fill("150");
+  await page.getByLabel("Příspěvek za směnu").fill("116,20");
+  await expect(page.getByLabel("Příspěvek za směnu")).toHaveValue("116,20");
   await page.getByLabel("Způsobilé směny").fill("18");
   await page.getByLabel("Započítat příspěvek do čistého příjmu").check();
   await page.getByLabel("Přidat odměny a příplatky").check();
@@ -92,6 +93,7 @@ test("optional payroll inputs can be clicked through and reset", async ({ page }
   await page.getByLabel("Víkend 10 %").fill("4");
 
   await expect(page.getByText("Příspěvek na stravování").first()).toBeVisible();
+  await expect(page.getByText(/2\s?092\s?Kč/).first()).toBeVisible();
   await expect(page.getByText("Odměny a příplatky").first()).toBeVisible();
 
   await page.getByLabel("Expertní režim").check();

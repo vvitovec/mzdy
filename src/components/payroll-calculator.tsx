@@ -125,6 +125,20 @@ function clampInputNumber(value: number, min = 0) {
   return Number.isFinite(value) ? Math.max(min, value) : min;
 }
 
+function formatDecimalInput(value: number) {
+  return String(value).replace(".", ",");
+}
+
+function parseDecimalInput(value: string, min = 0) {
+  const normalized = value.trim().replace(/\s/g, "").replace(",", ".");
+
+  if (normalized === "" || normalized === "." || normalized === ",") {
+    return min;
+  }
+
+  return clampInputNumber(Number(normalized), min);
+}
+
 function escapeHtml(value: string) {
   return value
     .replaceAll("&", "&amp;")
@@ -391,6 +405,9 @@ export function PayrollCalculator() {
   const [input, setInput] = useState<PayrollInput>(defaultInput);
   const [expertMode, setExpertMode] = useState(false);
   const [extrasOpen, setExtrasOpen] = useState(false);
+  const [mealAllowanceAmountInput, setMealAllowanceAmountInput] = useState(() =>
+    formatDecimalInput(defaultInput.benefits.mealAllowance.amountPerShift),
+  );
   const result = useMemo(() => calculatePayroll(input), [input]);
   const employeeDeductions = result.employeeSocial + result.employeeHealth + result.taxAfterDiscounts - result.taxBonus;
   const employerInsurance = result.employerSocial + result.employerHealth;
@@ -510,7 +527,9 @@ export function PayrollCalculator() {
   };
 
   const reset = () => {
-    setInput(createDefaultPayrollInput());
+    const nextInput = createDefaultPayrollInput();
+    setInput(nextInput);
+    setMealAllowanceAmountInput(formatDecimalInput(nextInput.benefits.mealAllowance.amountPerShift));
     setExpertMode(false);
     setExtrasOpen(false);
   };
@@ -657,11 +676,16 @@ export function PayrollCalculator() {
                 <div className="field-grid">
                   <Field label="Příspěvek za směnu" suffix="Kč">
                     <input
-                      value={input.benefits.mealAllowance.amountPerShift}
+                      value={mealAllowanceAmountInput}
                       min={0}
-                      step="0.5"
-                      type="number"
-                      onChange={(event) => updateMealAllowance({ amountPerShift: clampInputNumber(Number(event.target.value)) })}
+                      inputMode="decimal"
+                      type="text"
+                      onBlur={() => setMealAllowanceAmountInput(formatDecimalInput(input.benefits.mealAllowance.amountPerShift))}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        setMealAllowanceAmountInput(value);
+                        updateMealAllowance({ amountPerShift: parseDecimalInput(value) });
+                      }}
                     />
                   </Field>
                   <Field label="Způsobilé směny" suffix="směn">
